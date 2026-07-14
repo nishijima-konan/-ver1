@@ -155,48 +155,35 @@
         function stopScan() {
             activeScanningMode = "none";
             isStreamActive = false;
-            const videoElement = document.getElementById('video');
-            if (videoElement && videoElement.srcObject) {
-                videoElement.srcObject.getTracks().forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
             if(codeReader) codeReader.reset();
             txtStatus.textContent = "停止しました";
             clearOverlay();
         }
 
-        // エラーの原因となるフォーカスモード命令を除去し、安定起動を最優先に修正
+        // 過去コードの最も安定した自動カメラ決定ロジックを正確に再現
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
             try {
-                if (!selectedDeviceId) {
-                    const videoInputDevices = await codeReader.listVideoInputDevices();
-                    const backCamera = videoInputDevices.find(device => 
-                        device.label.toLowerCase().includes('back') || 
-                        device.label.toLowerCase().includes('environment')
-                    );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
-                }
+                // デバイスIDを固定指名せず、ブラウザが一番綺麗に映せる背面カメラを自動検出させる
+                const videoInputDevices = await codeReader.listVideoInputDevices();
+                const backCamera = videoInputDevices.find(device => 
+                    device.label.toLowerCase().includes('back') || 
+                    device.label.toLowerCase().includes('environment')
+                );
                 
-                // 起動エラーを引き起こす特定のカメラ拡張命令を排除し、安全な画質要求のみに集約
-                const constraints = {
-                    video: {
-                        deviceId: { exact: selectedDeviceId },
-                        width: { ideal: 1920 }, 
-                        height: { ideal: 1080 }
-                    }
-                };
-                
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                document.getElementById('video').srcObject = stream;
+                // 最適なカメラIDを選択。見つからなければ1番目のカメラを適用
+                selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
+
                 isStreamActive = true;
 
-                codeReader.decodeFromStream(stream, 'video', (result, err) => {
+                // 過去に実績のある最もエラーの起きないZXing標準のスキャン命令で一発起動
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now();
                         if (now - previousScannedQrTime < 1500) return;
                         if (result.text.length < 5) return; 
+                        
                         previousScannedQrTime = now;
                         if (result.resultPoints) drawBox(result.resultPoints);
                         handleIncomingScan(result.text);
@@ -204,7 +191,7 @@
                 });
             } catch (err) { 
                 console.error("Camera system error:", err);
-                txtStatus.textContent = "カメラ起動エラー: 再度お試しいただくか、カメラ権限をご確認ください。"; 
+                txtStatus.textContent = "カメラが見つかりません。権限をご確認ください。"; 
             }
         }
 
