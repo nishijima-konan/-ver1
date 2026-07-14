@@ -81,7 +81,9 @@
 
         try  {
 
-    codeReader = new ZXing.BrowserQRCodeReader();
+    codeReader = new ZXing.BrowserQRCodeReader(undefined, {
+    delayBetweenScanAttempts: 30
+});
 
 }
 catch(e){
@@ -224,15 +226,13 @@ if (htmlVideo.srcObject) {
 
                 const now = Date.now();
 
-                if (now - lastScanTime < 1500) return;
+                if (now - lastScanTime < 350) return;
 
                 lastScanTime = now;
 
-                if (result.resultPoints) {
-
-                    drawBox(result.resultPoints);
-
-                }
+                if (result.resultPoints && result.resultPoints.length === 4) {
+    drawBox(result.resultPoints);
+}
 
                 handleIncomingScan(result.text);
 
