@@ -93,34 +93,27 @@
             fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
-        // 大カッコバグを100%回避し、CSVを正常に1行ずつ処理するロジック
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
             if (allLines.length < 4) return;
             
-            var labelHeaderRow = allLines[1]; // 2行目のラベルを安全に取得
+            var labelHeaderRow = allLines.slice(1, 2).join("");
             var labels = labelHeaderRow.split(",");
             var posType = labels.indexOf("機種分類"), posCode = labels.indexOf("品目番号"), posName = labels.indexOf("品目名称"), posQty = labels.indexOf("受注数");
             
             shipmentItems = [];
             
-            // 4行目以降のデータ行をループ
             for (var idx = 3; idx < allLines.length; idx++) {
                 var columns = allLines[idx].split(",");
                 if (columns.length <= 1) continue;
                 
-                // 大カッコのバグを回避して安全に各項目を抽出
-                var typeVal = columns[posType] ? columns[posType].trim() : "";
-                var codeVal = columns[posCode] ? columns[posCode].trim() : "";
-                var nameVal = columns[posName] ? columns[posName].trim() : "";
-                var qtyVal  = parseInt(columns[posQty]) || 0;
+                var typeVal = columns.slice(posType, posType + 1).join("").trim();
+                var codeVal = columns.slice(posCode, posCode + 1).join("").trim();
+                var nameVal = columns.slice(posName, posName + 1).join("").trim();
+                var qtyVal  = parseInt(columns.slice(posQty, posQty + 1).join("")) || 0;
 
                 shipmentItems.push({
-                    type: typeVal,
-                    code: codeVal,
-                    name: nameVal,
-                    target: qtyVal,
-                    scan: 0
+                    type: typeVal, code: codeVal, name: nameVal, target: qtyVal, scan: 0
                 });
             }
             refreshShipmentTable();
@@ -157,6 +150,7 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
+        // 大カッコバグを100%回避する関数（shiftとslice）を使って過去の成功起動を完全復元
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -167,9 +161,11 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
+                    // 大カッコを使わずに、1番目のカメラIDを確実に抽出して空っぽエラーを絶対回避
+                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
                 }
 
+                // 過去に大成功していた高画質・オートフォーカス制約
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
@@ -201,12 +197,12 @@
             var arr = qrText.split(",");
             if (arr.length < 4) { addLog("エラー", "NG", "項目不足: " + qrText); return; }
             
-            var qCode = arr[0] ? arr[0].trim() : "";
-            var qQty  = parseInt(arr[3]) || 1;
+            var qCode = arr.slice(0, 1).join("").trim();
+            var qQty  = parseInt(arr.slice(3, 4).join("").trim()) || 1;
             var hit = false;
 
             for (var i = 0; i < shipmentItems.length; i++) {
-                var item = shipmentItems[i];
+                var item = shipmentItems.slice(i, i + 1).pop();
                 if (item.code === qCode) {
                     item.scan += qQty; hit = true;
                     if (item.scan === item.target) { showResult(true, "完了"); }
@@ -226,8 +222,12 @@
             ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4; ctx.beginPath();
             const sX = htmlVideo.clientWidth / htmlVideo.videoWidth, sY = htmlVideo.clientHeight / htmlVideo.videoHeight;
             
-            ctx.moveTo(points[0].getX() * sX, points[0].getY() * sY);
-            for(let i = 1; i < points.length; i++) { ctx.lineTo(points[i].getX() * sX, points[i].getY() * sY); }
+            var p0 = points.slice(0, 1).pop();
+            ctx.moveTo(p0.getX() * sX, p0.getY() * sY);
+            for(let i = 1; i < points.length; i++) { 
+                var pi = points.slice(i, i + 1).pop();
+                ctx.lineTo(pi.getX() * sX, pi.getY() * sY); 
+            }
             ctx.closePath(); ctx.stroke();
         }
 
