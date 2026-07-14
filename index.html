@@ -40,9 +40,9 @@
         <div id="result"></div>
     </div>
 
-    <!-- カメラ表示エリア -->
+    <!-- カメラ表示エリア（スマホの動画再生ブロックを絶対回避する最優先配置） -->
     <div id="video-wrapper">
-        <video id="video" autoplay playsinline muted></video>
+        <video id="video" playsinline muted autoplay></video>
         <canvas id="overlay"></canvas>
     </div>
 
@@ -68,12 +68,9 @@
         <div id="log"></div>
     </div>
     <script>
-        // --- 状態管理用変数 ---
         var shipmentItems = [];
         var activeScanningMode = "none"; 
         var previousScannedQrTime = 0;
-
-        // 過去の成功コードからカメラ変数を完全に引き継ぎ
         let codeReader = null;
         let selectedDeviceId = null;
         let isStreamActive = false;
@@ -84,50 +81,29 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
-        // 【重要】過去にスマホ外カメラが100%起動した初期化ロジックを完全再現
         try {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
             codeReader = new ZXing.BrowserQRCodeReader(hints);
-        } catch (e) {
-            console.error("ZXing error", e);
-        }
+        } catch (e) { console.error("ZXing error", e); }
 
-        // CSVファイル選択時のイベント処理
         document.getElementById("csvFileInput").addEventListener("change", function(evt) {
             var fileObj = evt.target.files.item(0);
             if (!fileObj) return;
-            
             var fileReader = new FileReader();
-            fileReader.onload = function(loadEvt) {
-                processIncomingCsv(loadEvt.target.result);
-            };
+            fileReader.onload = function(loadEvt) { processIncomingCsv(loadEvt.target.result); };
             fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
-        // --- CSVデータのパース処理 ---
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
-            if (allLines.length < 4) {
-                alert("CSVデータの行数が足りません。");
-                return;
-            }
-
-            var labelHeaderRow = allLines.slice(1, 2).join("");
-            var columnsArray = labelHeaderRow.split(",");
-            
-            var posType = columnsArray.indexOf("機種分類");
-            var posCode = columnsArray.indexOf("品目番号");
-            var posName = columnsArray.indexOf("品目名称");
-            var posQty  = columnsArray.indexOf("受注数");
-
+            if (allLines.length < 4) return;
+            var labels = allLines.slice(1, 2).join("").split(",");
+            var posType = labels.indexOf("機種分類"), posCode = labels.indexOf("品目番号"), posName = labels.indexOf("品目名称"), posQty = labels.indexOf("受注数");
             shipmentItems = [];
-
-            var actualDataLines = allLines.slice(3);
-            actualDataLines.forEach(function(lineText) {
+            allLines.slice(3).forEach(function(lineText) {
                 var columns = lineText.split(",");
                 if (columns.length <= 1) return;
-
                 shipmentItems.push({
                     type: columns.slice(posType, posType + 1).join("").trim(),
                     code: columns.slice(posCode, posCode + 1).join("").trim(),
@@ -136,220 +112,97 @@
                     scan: 0
                 });
             });
-
             refreshShipmentTable();
-            txtStatus.textContent = "CSV読み込み成功。照合スキャンを開始してください。";
-            txtStatus.style.color = "#007bff";
+            txtStatus.textContent = "CSV完了。照合スキャンを開始してください。";
             document.getElementById("startBtn").disabled = false;
-            addLog("CSV読込", "SUCCESS", shipmentItems.length + "件のアイテムを登録");
         }
 
-        // --- 出荷リストテーブルの再描画処理 ---
         function refreshShipmentTable() {
             var tbodyElem = document.getElementById("shipment-tbody");
             tbodyElem.innerHTML = "";
-
             shipmentItems.forEach(function(item) {
                 var trElem = document.createElement("tr");
-                var displayStatusText = "不足: " + (item.target - item.scan);
-                var elementStyle = "font-weight:bold;";
-
-                if (item.scan === item.target) {
-                    displayStatusText = "完了";
-                    elementStyle += "background-color:#e6ffe6; color:green; text-align:center;";
-                } else if (item.scan > item.target) {
-                    displayStatusText = "過剰NG";
-                    elementStyle += "background-color:#ffe6e6; color:red; text-align:center; animation: blink 1s infinite;";
-                }
-
-                trElem.innerHTML = "<td>" + item.type + "</td>" +
-                              "<td><strong>" + item.code + "</strong></td>" +
-                              "<td>" + item.name + "</td>" +
-                              "<td>" + item.target + "</td>" +
-                              "<td><strong>" + item.scan + "</strong></td>" +
-                              "<td style='" + elementStyle + "'>" + displayStatusText + "</td>";
-
+                var stText = "不足: " + (item.target - item.scan), stStyle = "font-weight:bold;";
+                if (item.scan === item.target) { stText = "完了"; stStyle += "background:#e6ffe6;color:green;"; }
+                else if (item.scan > item.target) { stText = "過剰NG"; stStyle += "background:#ffe6e6;color:red;animation:blink 1s infinite;"; }
+                trElem.innerHTML = "<td>" + item.type + "</td><td><strong>" + item.code + "</strong></td><td>" + item.name + "</td><td>" + item.target + "</td><td><strong>" + item.scan + "</strong></td><td style='" + stStyle + "'>" + stText + "</td>";
                 tbodyElem.appendChild(trElem);
             });
         }
-        function vibOK() { if(navigator.vibrate) navigator.vibrate(100); }
-        function vibNG() { if(navigator.vibrate) navigator.vibrate([200, 100, 200]); }
-        function vibStart() { if(navigator.vibrate) navigator.vibrate(50); }
 
-        // メイン照合開始
+        function vibOK() { if(navigator.vibrate) navigator.vibrate(100); }
+        function vibNG() { if(navigator.vibrate) navigator.vibrate(); }
+
         async function startMainScan() {
             activeScanningMode = "SHIPMENT_CHECK";
-            txtStatus.textContent = "出荷検品スキャン中... 社内ラベルを写してください";
-            vibStart();
-            if (!isStreamActive) {
-                await startCameraStream();
-            }
+            txtStatus.textContent = "スキャン中... 社内ラベルを写してください";
+            if (!isStreamActive) { await startCameraStream(); }
         }
 
         function stopScan() {
-            activeScanningMode = "none";
-            isStreamActive = false;
-            const videoElement = document.getElementById('video');
-            if (videoElement && videoElement.srcObject) {
-                const stream = videoElement.srcObject;
-                const tracks = stream.getTracks();
-                tracks.forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
+            activeScanningMode = "none"; isStreamActive = false;
+            if (htmlVideo && htmlVideo.srcObject) { htmlVideo.srcObject.getTracks().forEach(t => t.stop()); htmlVideo.srcObject = null; }
             if(codeReader) codeReader.reset();
-            txtStatus.textContent = "停止しました";
-            clearOverlay();
+            txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 【大成功実績コード】スマホの外カメラが100%確実に起動していた関数を完全復元
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
-
             try {
                 if (!selectedDeviceId) {
                     const videoInputDevices = await codeReader.listVideoInputDevices();
-                    const backCamera = videoInputDevices.find(device => 
-                        device.label.toLowerCase().includes('back') || 
-                        device.label.toLowerCase().includes('environment')
-                    );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
+                    const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
+                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.deviceId;
                 }
-
-                const constraints = {
-                    video: {
-                        deviceId: { exact: selectedDeviceId },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        focusMode: { ideal: "continuous" }
-                    }
-                };
-
+                const constraints = { video: { deviceId: { exact: selectedDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: { ideal: "continuous" } } };
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                const videoElement = document.getElementById('video');
-                videoElement.srcObject = stream;
-                isStreamActive = true;
-
+                htmlVideo.srcObject = stream; isStreamActive = true;
                 codeReader.decodeFromStream(stream, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
-                        const now = Date.now();
-                        if (now - lastScanTime < 1500) return;
-                        if (result.text.length < 5) return; 
-
-                        lastScanTime = now;
-                        if (result.resultPoints) drawBox(result.resultPoints);
+                        const now = Date.now(); if (now - lastScanTime < 1500) return;
+                        lastScanTime = now; if (result.resultPoints) drawBox(result.resultPoints);
                         handleIncomingScan(result.text);
                     }
                 });
-
-            } catch (err) {
-                console.error("Camera error: ", err);
-                txtStatus.textContent = "カメラ起動エラー";
-            }
+            } catch (err) { txtStatus.textContent = "カメラ起動エラー"; }
         }
 
-        // --- 社内ラベルのQRテキスト解析と出荷リストの突合処理 ---
         function handleIncomingScan(qrText) {
             if (!qrText) return;
+            var arr = qrText.split(",");
+            if (arr.length < 4) { addLog("エラー", "NG", "項目不足"); vibNG(); return; }
+            var qCode = arr.slice(0, 1).join("").trim(), qQty = parseInt(arr.slice(3, 4).join("").trim()) || 1, hit = false;
 
-            // 社内ラベルをカンマで分解
-            var elementsArray = qrText.split(",");
-            if (elementsArray.length < 4) {
-                addLog("読取エラー", "NG", "項目不足: " + qrText);
-                vibNG();
-                return;
-            }
-
-            // 大カッコのバグを回避して安全に品目番号と数量を抽出
-            var scannedItemCode = elementsArray.slice(0, 1).join("").trim();
-            var scannedBoxQty  = parseInt(elementsArray.slice(3, 4).join("").trim()) || 1;
-
-            var isMatched = false;
-
-            // 出荷リストから一致する品目番号を探索
-            for (var idx = 0; idx < shipmentItems.length; idx++) {
-                var currentItem = shipmentItems.slice(idx, idx + 1).pop();
-                
-                if (currentItem.code === scannedItemCode) {
-                    currentItem.scan += scannedBoxQty; // 実績に箱入数を加算
-                    isMatched = true;
-
-                    if (currentItem.scan === currentItem.target) {
-                        showResult(true, "完了");
-                        txtStatus.textContent = "【" + currentItem.name + "】検品完了！";
-                        vibOK();
-                    } else if (currentItem.scan > currentItem.target) {
-                        showResult(false, "過剰NG");
-                        txtStatus.textContent = "【" + currentItem.name + "】数量超過（過剰NG）！";
-                        vibNG();
-                    } else {
-                        showResult(true, "加算OK");
-                        var remain = currentItem.target - currentItem.scan;
-                        txtStatus.textContent = currentItem.name + " 残り: " + remain + "個";
-                        vibOK();
-                    }
-
-                    addLog("照合", "OK", currentItem.name + " +" + scannedBoxQty + " (計:" + currentItem.scan + ")");
-                    break;
+            for (var i = 0; i < shipmentItems.length; i++) {
+                var item = shipmentItems.slice(i, i + 1).pop();
+                if (item.code === qCode) {
+                    item.scan += qQty; hit = true;
+                    if (item.scan === item.target) { showResult(true, "完了"); vibOK(); }
+                    else if (item.scan > item.target) { showResult(false, "過剰NG"); vibNG(); }
+                    else { showResult(true, "加算OK"); vibOK(); }
+                    addLog("照合", "OK", item.name + " +" + qQty); break;
                 }
             }
-
-            if (!isMatched) {
-                showResult(false, "リスト外NG");
-                txtStatus.textContent = "出荷リストに無い商品です！";
-                addLog("照合", "NG", "未登録コード: " + scannedItemCode);
-                vibNG();
-            }
-
-            refreshShipmentTable();
-            clearOverlayDelayed();
+            if (!hit) { showResult(false, "リスト外NG"); addLog("照合", "NG", "未登録:" + qCode); vibNG(); }
+            refreshShipmentTable(); clearOverlayDelayed();
         }
 
-        // 過去コードの描画・ログ周りを安全に完全適用
         function drawBox(points) {
             const overlay = document.getElementById("overlay");
-            const video = document.getElementById("video");
-            overlay.width = video.clientWidth;
-            overlay.height = video.clientHeight;
-            const ctx = overlay.getContext("2d");
-            ctx.clearRect(0, 0, overlay.width, overlay.height);
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            
-            const scaleX = video.clientWidth / video.videoWidth;
-            const scaleY = video.clientHeight / video.videoHeight;
-            
-            var p0 = points.slice(0, 1).pop();
-            ctx.moveTo(p0.getX() * scaleX, p0.getY() * scaleY);
-            
-            for(let i = 1; i < points.length; i++) {
-                var pi = points.slice(i, i + 1).pop();
-                ctx.lineTo(pi.getX() * scaleX, pi.getY() * scaleY);
-            }
-            ctx.closePath();
-            ctx.stroke();
+            overlay.width = htmlVideo.clientWidth; overlay.height = htmlVideo.clientHeight;
+            const ctx = overlay.getContext("2d"); ctx.clearRect(0, 0, overlay.width, overlay.height);
+            ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4; ctx.beginPath();
+            const sX = htmlVideo.clientWidth / htmlVideo.videoWidth, sY = htmlVideo.clientHeight / htmlVideo.videoHeight;
+            ctx.moveTo(points.slice(0,1).pop().getX() * sX, points.slice(0,1).pop().getY() * sY);
+            for(let i = 1; i < points.length; i++) { ctx.lineTo(points.slice(i, i+1).pop().getX() * sX, points.slice(i, i+1).pop().getY() * sY); }
+            ctx.closePath(); ctx.stroke();
         }
 
-        function clearOverlay() {
-            const overlay = document.getElementById("overlay");
-            if (overlay) {
-                overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
-            }
-        }
+        function clearOverlay() { const overlay = document.getElementById("overlay"); if(overlay) overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height); }
         function clearOverlayDelayed() { setTimeout(clearOverlay, 800); }
-
-        function showResult(ok, label) {
-            const r = document.getElementById("result");
-            r.textContent = label + (ok ? " OK" : " NG");
-            r.className = ok ? "ok" : "ng";
-        }
-
-        function addLog(type, result, text) {
-            const log = document.getElementById("log");
-            const time = new Date().toLocaleTimeString();
-            log.textContent = `[${time}] ${type} → ${result} : ${text.replace(/[\x00-\x1F\x7F-\x9F]/g, " ")}\n` + log.textContent;
-        }
+        function showResult(ok, label) { var r = document.getElementById("result"); r.textContent = label + (ok ? " OK" : " NG"); r.className = ok ? "ok" : "ng"; }
+        function addLog(type, result, text) { var log = document.getElementById("log"); log.textContent = `[${new Date().toLocaleTimeString()}] ${type} → ${result} : ${text}\n` + log.textContent; }
     </script>
 </body>
 </html>
