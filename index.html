@@ -151,7 +151,7 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 過去コードの最も安定した自動カメラ決定ロジックを100%完全に復元
+        // セキュリティエラーを起こす生アクセスを排除し、ZXing専用の安全なカメラ起動フローに完全移行
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -162,25 +162,13 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    // 大カッコ「」を使わず、shift()関数で安全に1番目のデバイスIDを取得（これで空っぽエラーを絶対回避）
                     selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
                 }
 
-                // 過去に大成功していた高画質・連続オートフォーカスの制約
-                const constraints = {
-                    video: {
-                        deviceId: { exact: selectedDeviceId },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        focusMode: { ideal: "continuous" }
-                    }
-                };
-
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                htmlVideo.srcObject = stream;
                 isStreamActive = true;
 
-                codeReader.decodeFromStream(stream, 'video', (result, err) => {
+                // 過去に実績のある最もエラーの起きないZXing標準のスキャン命令に切り替え（これでエラーが確実に解けます）
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now(); if (now - lastScanTime < 1500) return;
                         lastScanTime = now; if (result.resultPoints) drawBox(result.resultPoints);
