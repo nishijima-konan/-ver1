@@ -9,14 +9,14 @@
         h1, h2 { color: #333; }
         .config-section, .scan-section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         input[type="file"], input[type="text"] { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
-        input[type="text"] { width: 400px; }
+        input[type="text"] { width: 300px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
         th { background-color: #007bff; color: white; }
         tr:nth-child(even) { background-color: #f9f9f9; }
         .status-normal { color: #333; }
         .status-done { color: green; font-weight: bold; background-color: #e6f4ea; }
-        .status-over { color: red; font-weight: bold; background-color: #fce8e6; animation: blink 1s infinite; }
+        .status-over { color: red; font-weight: bold; background-color: #fce8e6; -webkit-animation: blink 1s infinite; animation: blink 1s infinite; }
         @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.5;} 100% {opacity: 1;} }
     </style>
 </head>
@@ -47,12 +47,13 @@
                 <th>品目番号</th>
                 <th>品目名称</th>
                 <th>受注数量</th>
-                <th>不足数 / 状態</th>
+                <th>スキャン済数</th>
+                <th>状態 / 不足数</th>
             </tr>
         </thead>
         <tbody id="listBody">
             <tr>
-                <td colspan="6" style="text-align: center; color: #999;">CSVファイルを読み込んでください</td>
+                <td colspan="7" style="text-align: center; color: #999;">CSVファイルを読み込んでください</td>
             </tr>
         </tbody>
     </table>
@@ -70,42 +71,41 @@
                 const text = event.target.result;
                 parseCSV(text);
             };
-            // 日本語の文字化けを防ぐためShift_JISで読み込み
-            reader.readAsText(file, 'Shift_JIS'); 
+            reader.readAsText(file, 'Shift_JIS'); // 文字化けする場合は 'UTF-8' に変更してください
         });
 
         // CSVパース（解析）
         function parseCSV(text) {
             const lines = text.split(/\r\n|\n/);
-            if (lines.length < 4) return; // ヘッダー等で3行あるため
+            if (lines.length < 2) return;
 
-            // 2行目の日本語ラベルからインデックスを取得
-            const labels = lines[1].split(',');
-            const idxDate = labels.indexOf('#Label') + 2; // 「出荷予定日」の位置（実データ列はインデックス2）
-            const idxType = labels.indexOf('機種分類');
-            const idxCode = labels.indexOf('品目番号');
-            const idxName = labels.indexOf('品目名称');
-            const idxQty = labels.indexOf('受注数'); // CSV内は「受注数」
+            // ヘッダー行のインデックスを確認
+            const headers = lines[0].split(',');
+            const idxDate = headers.indexOf('出荷予定日');
+            const idxType = headers.indexOf('機種分類');
+            const idxCode = headers.indexOf('品目番号');
+            const idxName = headers.indexOf('品目名称');
+            const idxQty = headers.indexOf('受注数量');
 
             shipmentData = [];
             
-            // 4行目（インデックス3）からデータスタート
-            for (let i = 3; i < lines.length; i++) {
+            for (let i = 1; i < lines.length; i++) {
                 if (!lines[i].trim()) continue;
                 const cols = lines[i].split(',');
                 
+                // データの格納
                 shipmentData.push({
-                    date: cols[2] || '',      // 出荷予定日
-                    type: cols[4] || '',      // 機種分類
-                    code: cols[5] || '',      // 品目番号
-                    name: cols[7] || '',      // 品目名称
-                    targetQty: parseInt(cols[9]) || 0, // 受注数
-                    scanQty: 0                // 初期スキャン数
+                    date: cols[idxDate] || '',
+                    type: cols[idxType] || '',
+                    code: cols[idxCode] || '',
+                    name: cols[idxName] || '',
+                    targetQty: parseInt(cols[idxQty]) || 0,
+                    scanQty: 0 // 初期スキャン数は0
                 });
             }
 
             renderTable();
-            document.getElementById('qrInput').disabled = false;
+            document.getElementById('qrInput').disabled = false; // スキャンを有効化
             document.getElementById('qrInput').focus();
         }
 
@@ -114,13 +114,13 @@
             const tbody = document.getElementById('listBody');
             tbody.innerHTML = '';
 
-            shipmentData.forEach((item) => {
+            shipmentData.forEach((item, index) => {
                 const tr = document.createElement('tr');
                 
+                // 不足数・状態の判定
                 let statusText = '';
                 let statusClass = 'status-normal';
                 
-                // 不足数・状態の判定ロジック
                 if (item.scanQty === 0) {
                     statusText = `不足: ${item.targetQty}`;
                 } else if (item.scanQty < item.targetQty) {
@@ -139,6 +139,7 @@
                     <td>${item.code}</td>
                     <td>${item.name}</td>
                     <td>${item.targetQty}</td>
+                    <td>${item.scanQty}</td>
                     <td class="${statusClass}">${statusText}</td>
                 `;
                 tbody.appendChild(tr);
@@ -158,19 +159,20 @@
 
         // QRデータと出荷リストの突合処理
         function matchQR(qrText) {
+            // 【暫定ロジック】QRコードに「品目番号」が含まれていると仮定して部分一致で探します
+            // 正確なロジックはQRのデータ構造を見てから修正します
             let found = false;
 
-            // QRコードの中に「品目番号」が含まれているかで仮判定しています
             for (let item of shipmentData) {
                 if (qrText.includes(item.code)) {
-                    item.scanQty += 1; 
+                    item.scanQty += 1; // 一致したらスキャン数を+1
                     found = true;
                     break;
                 }
             }
 
             if (!found) {
-                alert('該当する商品が出荷リストに見つかりません：' + qrText);
+                alert('該当する品目番号が出荷リストに見つかりません：' + qrText);
             }
 
             renderTable();
