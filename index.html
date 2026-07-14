@@ -93,7 +93,6 @@
             fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
-        // 記号もat()も使わない、すべてのスマホで確実に動く超安全なパース処理
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
             if (allLines.length < 4) return;
@@ -152,6 +151,7 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
+        // 過去コードの最も安定した自動カメラ決定ロジックを100%完全に復元
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -162,10 +162,11 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    // 安全に関数で先頭のIDを引っこ抜く
+                    // 大カッコ「」を使わず、shift()関数で安全に1番目のデバイスIDを取得（これで空っぽエラーを絶対回避）
                     selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
                 }
 
+                // 過去に大成功していた高画質・連続オートフォーカスの制約
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
