@@ -2,89 +2,75 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>出荷検品システム（ZXing強化版）</title>
+    <title>QRラベル判定</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- ZXingライブラリをCDNから読み込み -->
-    <script src="https://unpkg.com"></script>
     <style>
-        body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; color: #333; }
+        body { font-family: sans-serif; padding: 10px; margin: 0; background-color: #f5f5f5; }
+        h1 { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
+        button { margin: 5px 0; padding: 12px; font-size: 16px; width: 100%; font-weight: bold; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; background: #fff; }
+        #status { font-size: 16px; margin: 8px 0; text-align: center; color: #333; font-weight: bold; }
+        #result { margin-top: 10px; font-size: 28px; font-weight: bold; text-align: center; padding: 10px; border-radius: 6px; }
+        .ok { color: green; background: #e6ffe6; border: 2px solid green; }
+        .ng { color: red; background: #ffe6e6; border: 2px solid red; }
+        #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; }
+        #video { width: 100%; display: block; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        
-        /* 映像表示エリア：過去の成功例に基づき、ブラックアウトを防ぐため最小サイズを確保 */
-        #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; display: none; }
-        #video { width: 100%; display: block; height: auto; min-height: 240px; }
-        
-        /* テーブルスタイル */
-        .table-wrapper { width: 100%; overflow-x: auto; margin-top: 10px; background: #fff; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; min-width: 500px; font-size: 13px; }
-        th, td { border-bottom: 1px solid #ddd; padding: 10px 8px; text-align: left; }
-        th { background: #f1f5f9; font-weight: bold; }
-        
-        /* 状態表示判定用カラー */
-        .status-normal { color: #666; font-weight: bold; }
-        .status-done { color: green; font-weight: bold; background: #e6ffe6; padding: 2px 6px; border-radius: 4px; border: 1px solid green; display: inline-block; }
-        .status-over { color: red; font-weight: bold; background: #ffe6e6; padding: 2px 6px; border-radius: 4px; border: 1px solid red; display: inline-block; animation: blink 1s infinite; }
+        .label { font-size: 13px; color: #666; font-weight: bold; margin-bottom: 6px; }
+        #log { font-size: 13px; margin-top: 8px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; background: #fff; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .db-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+        .db-table th, .db-table td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+        .db-table th { background-color: #eee; }
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
-        
-        #status { font-size: 15px; font-weight: bold; color: #0d47a1; margin-bottom: 8px; text-align: center; }
-        #log { font-size: 12px; background: #eee; padding: 6px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; border-radius: 4px; }
     </style>
+    <script src="https://unpkg.com"></script>
 </head>
 <body>
 
-    <h1>出荷検品システム</h1>
+    <h1>QR出荷検品システム</h1>
+    <div id="status">【必須】最初に出荷指示書CSVを選択してください</div>
 
-    <!-- 1. CSV読み込み -->
-    <div class="box">
-        <h2>1. 出荷指示書の読み込み</h2>
-        <input type="file" id="csvFile" accept=".csv">
-    </div>
-
-    <!-- 2. ZXingカメラ操作エリア -->
-    <div class="box">
-        <h2>2. 社内ラベル スキャン</h2>
-        <div id="status">CSVを読み込むとカメラを開始できます</div>
-        <button id="startBtn" disabled>カメラを起動する</button>
-        
-        <div id="video-wrapper">
-            <!-- ブラックアウトを防ぐため自動再生、ミュート、インライン再生属性を厳格に付与 -->
-            <video id="video" autoplay muted playsinline></video>
+    <div id="section-main" class="box">
+        <!-- CSV読み込みエリア -->
+        <div style="padding:10px; background:#fffde7; border:1px dashed #ffd54f; border-radius:6px; margin-bottom:12px;">
+            <input type="file" id="csvFileInput" accept=".csv" style="width:100%; font-size:14px;">
         </div>
-        
-        <div id="log">スキャンログがここに表示されます</div>
+        <button id="startBtn" onclick="startMainScan()" style="background: #007bff; color: white; border: none;" disabled>照合スキャン開始</button>
+        <button onclick="stopScan()" style="background: #6c757d; color: white; border: none; margin-top: 8px;">停止</button>
+        <div id="result"></div>
     </div>
 
-    <!-- 3. 出荷リスト表示 -->
-    <h2>出荷リスト</h2>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>機種分類</th>
-                    <th>品目番号</th>
-                    <th>品目名称</th>
-                    <th>受注数</th>
-                    <th>実績数</th>
-                    <th>不足数 / 状態</th>
-                </tr>
-            </thead>
-            <tbody id="listBody">
-                <tr>
-                    <td colspan="6" style="text-align: center; color: #999; padding: 20px;">CSVファイルを読み込んでください</td>
-                </tr>
-            </tbody>
-        </table>
+    <!-- カメラ表示エリア -->
+    <div id="video-wrapper">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
     </div>
-  <script>
-        // --- 今回の出荷検品用状態管理変数 ---
+
+    <!-- 出荷リスト表示エリア -->
+    <div class="box">
+        <div class="label">📊 出荷リスト（CSVデータ同期）</div>
+        <div style="max-height: 250px; overflow-y: auto;">
+            <table class="db-table">
+                <thead>
+                    <tr>
+                        <th>機種分類</th><th>品目番号</th><th>品目名称</th><th>受注数</th><th>実績数</th><th>不足数/状態</th>
+                    </tr>
+                </thead>
+                <tbody id="shipment-tbody">
+                    <tr><td colspan="6" style="text-align:center; color:#999; padding:15px;">CSVファイルを読み込んでください</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="box">
+        <div class="label">③ 読み取り履歴ログ</div>
+        <div id="log"></div>
+    </div>
+    <script>
         var shipmentItems = [];
         var activeScanningMode = "none"; 
-        var previousScannedQrText = "";
         var previousScannedQrTime = 0;
-
-        // 過去コードのカメラ変数を引き継ぎ
         let codeReader = null;
         let selectedDeviceId = null;
         let isStreamActive = false;
@@ -94,105 +80,56 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
-        // 過去コードの安全なZXing初期化ロジックを100%継承
         try {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
             codeReader = new ZXing.BrowserQRCodeReader(hints);
-        } catch (e) {
-            console.error("ZXing error", e);
-        }
+        } catch (e) { console.error("ZXing error", e); }
 
-        // ページロード時の初期設定
-        window.addEventListener("load", function() {
-            appendSystemLog("システム起動: ZXingカメラ初期化完了");
-            
-            // 通常照合ウィンドウの内部に、CSV選択ボタンを動的に組み込み
-            var csvBoxHtml = '<div style="margin-top:10px; padding:10px; background:#fffde7; border:1px dashed #ffd54f; border-radius:6px;">' +
-                             '<span style="font-size:12px; font-weight:bold; color:#f57f17;">[必須] まず出荷指示書CSVを選択してください:</span><br>' +
-                             '<input type="file" id="csvFileInput" accept=".csv" style="margin-top:6px; width:100%; font-size:14px;">' +
-                             '</div>';
-            document.getElementById("section-main").insertAdjacentHTML("afterbegin", csvBoxHtml);
-            
-            // CSV選択時のイベント処理
-            document.getElementById("csvFileInput").addEventListener("change", function(evt) {
-                var fileObj = evt.target.files.item(0);
-                if (!fileObj) return;
-                
-                var fileReader = new FileReader();
-                fileReader.onload = function(loadEvt) {
-                    processIncomingCsv(loadEvt.target.result);
-                };
-                fileReader.readAsText(fileObj, "Shift_JIS"); // 静岡製機㈱等の文字化けを防止
-            });
-
-            // 既存のマスターデータベース確認エリアを「出荷リスト」に流用して強制書き換え
-            var dbTableArea = document.querySelector(".db-table").parentNode;
-            dbTableArea.innerHTML = '<table class="db-table"><thead><tr>' +
-                                    '<th>機種分類</th><th>品目番号</th><th>品目名称</th><th>受注数</th><th>実績数</th><th>不足数/状態</th>' +
-                                    '</tr></thead><tbody id="shipment-tbody">' +
-                                    '<tr><td colspan="6" style="text-align:center; color:#999; padding:15px;">CSVファイルを読み込んでください</td></tr>' +
-                                    '</tbody></table>';
-
-            // 不要となった古いモニタリングボックス等は非表示に
-            document.getElementById("monitor-box").style.display = "none";
+        document.getElementById("csvFileInput").addEventListener("change", function(evt) {
+            var fileObj = evt.target.files.item(0);
+            if (!fileObj) return;
+            var fileReader = new FileReader();
+            fileReader.onload = function(loadEvt) { processIncomingCsv(loadEvt.target.result); };
+            fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
-        // --- CSVデータのパースとデータ格納 ---
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
-            if (allLines.length < 4) {
-                alert("CSVデータの行数が足りません。");
-                return;
-            }
+            if (allLines.length < 4) return;
 
-            // 2行目の日本語ヘッダーから各項目のインデックスを動的に抽出
             var labelHeaderRow = allLines.slice(1, 2).join("");
             var columnsArray = labelHeaderRow.split(",");
-            
             var posType = columnsArray.indexOf("機種分類");
             var posCode = columnsArray.indexOf("品目番号");
             var posName = columnsArray.indexOf("品目名称");
             var posQty  = columnsArray.indexOf("受注数");
 
             shipmentItems = [];
-
-            // 4行目（データ開始行）から解析ループ
             var actualDataLines = allLines.slice(3);
             actualDataLines.forEach(function(lineText) {
                 var columns = lineText.split(",");
                 if (columns.length <= 1) return;
-
-                var cType = columns.slice(posType, posType + 1).join("").trim();
-                var cCode = columns.slice(posCode, posCode + 1).join("").trim();
-                var cName = columns.slice(posName, posName + 1).join("").trim();
-                var cQty  = columns.slice(posQty, posQty + 1).join("").trim();
-
                 shipmentItems.push({
-                    type: cType,
-                    code: cCode,
-                    name: cName,
-                    target: parseInt(cQty) || 0,
+                    type: columns.slice(posType, posType + 1).join("").trim(),
+                    code: columns.slice(posCode, posCode + 1).join("").trim(),
+                    name: columns.slice(posName, posName + 1).join("").trim(),
+                    target: parseInt(columns.slice(posQty, posQty + 1).join("")) || 0,
                     scan: 0
                 });
             });
-
             refreshShipmentTable();
-            txtStatus.textContent = "CSV読み込み成功。カメラを開始してください。";
-            txtStatus.style.color = "#0d47a1";
-            appendSystemLog("CSV読み込み完了: " + shipmentItems.length + "件のデータをリスト化");
+            txtStatus.textContent = "CSV読込完了。スキャンを開始してください。";
+            document.getElementById("startBtn").disabled = false;
         }
 
-        // --- 出荷リストテーブルの再描画処理 ---
         function refreshShipmentTable() {
             var tbodyElem = document.getElementById("shipment-tbody");
             tbodyElem.innerHTML = "";
-
             shipmentItems.forEach(function(item) {
                 var trElem = document.createElement("tr");
                 var displayStatusText = "不足: " + (item.target - item.scan);
                 var elementStyle = "font-weight:bold;";
-
                 if (item.scan === item.target) {
                     displayStatusText = "完了";
                     elementStyle += "background-color:#e6ffe6; color:green; text-align:center;";
@@ -200,45 +137,37 @@
                     displayStatusText = "過剰NG";
                     elementStyle += "background-color:#ffe6e6; color:red; text-align:center; animation: blink 1s infinite;";
                 }
-
-                var rowHtml = "<td>" + item.type + "</td>" +
-                              "<td><strong>" + item.code + "</strong></td>" +
-                              "<td>" + item.name + "</td>" +
-                              "<td>" + item.target + "</td>" +
-                              "<td><strong>" + item.scan + "</strong></td>" +
-                              "<td style='" + elementStyle + "'>" + displayStatusText + "</td>";
-
-                trElem.innerHTML = rowHtml;
+                trElem.innerHTML = "<td>" + item.type + "</td><td><strong>" + item.code + "</strong></td><td>" + item.name + "</td><td>" + item.target + "</td><td><strong>" + item.scan + "</strong></td><td style='" + elementStyle + "'>" + displayStatusText + "</td>";
                 tbodyElem.appendChild(trElem);
             });
         }
-        // --- 過去コードの最も安定したカメラ起動処理をそのまま移植 ---
+        function vibOK() { if(navigator.vibrate) navigator.vibrate(100); }
+        function vibNG() { if(navigator.vibrate) navigator.vibrate([200, 100, 200]); }
+        function vibStart() { if(navigator.vibrate) navigator.vibrate(50); }
+
         async function startMainScan() {
             activeScanningMode = "SHIPMENT_CHECK";
-            document.getElementById('status').textContent = "出荷検品スキャン中... 社内ラベルを写してください";
+            txtStatus.textContent = "出荷検品スキャン中... 社内ラベルを写してください";
             vibStart();
-            if (!isStreamActive) {
-                await startCameraStream();
-            }
+            if (!isStreamActive) { await startCameraStream(); }
         }
 
         function stopScan() {
             activeScanningMode = "none";
-            if (codeReader) codeReader.reset();
-            var videoElement = document.getElementById('video');
-            if (videoElement.srcObject) {
-                videoElement.srcObject.getTracks().forEach(function(track) { track.stop(); });
-            }
-            videoElement.srcObject = null;
             isStreamActive = false;
-            document.getElementById('status').textContent = "停止中";
-            appendSystemLog("スキャンを停止しました");
+            const videoElement = document.getElementById('video');
+            if (videoElement && videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            if(codeReader) codeReader.reset();
+            txtStatus.textContent = "停止しました";
+            clearOverlay();
         }
 
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
-
             try {
                 if (!selectedDeviceId) {
                     const videoInputDevices = await codeReader.listVideoInputDevices();
@@ -246,142 +175,105 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
+                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
                 }
-
-                // 過去に成功した画質・フォーカス設定を100%適用
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
+                        width: { ideal: 1920 }, height: { ideal: 1080 },
                         focusMode: { ideal: "continuous" }
                     }
                 };
-
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                const videoElement = document.getElementById('video');
-                videoElement.srcObject = stream;
+                document.getElementById('video').srcObject = stream;
                 isStreamActive = true;
 
                 codeReader.decodeFromStream(stream, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now();
-                        // 連続読み込みを防止するインターバル
-                        if (now - previousScannedQrTime < 2500) return;
+                        if (now - previousScannedQrTime < 1500) return;
                         if (result.text.length < 5) return; 
-
                         previousScannedQrTime = now;
                         if (result.resultPoints) drawBox(result.resultPoints);
                         handleIncomingScan(result.text);
                     }
                 });
-
-            } catch (err) {
-                console.error("Camera error: ", err);
-                document.getElementById('status').textContent = "カメラ起動エラー";
-            }
+            } catch (err) { txtStatus.textContent = "カメラ起動エラー"; }
         }
 
-        // --- 社内ラベルのQRテキスト解析と出荷リストの突合処理 ---
         function handleIncomingScan(qrText) {
             if (!qrText) return;
-
-            // 社内ラベルをカンマで分解 (例: 5082420105600,,RKF406/506 ｽｲｯﾁﾍﾞｰｽ,50)
             var elementsArray = qrText.split(",");
             if (elementsArray.length < 4) {
-                appendSystemLog("【エラー】データ項目数が足りないQR: " + qrText);
-                vibNG();
-                return;
+                addLog("読取エラー", "NG", "項目不足: " + qrText);
+                vibNG(); return;
             }
-
-            // 大カッコのバグ消去を防ぐため、sliceを使って安全に品目番号と数量を抽出
             var scannedItemCode = elementsArray.slice(0, 1).join("").trim();
             var scannedBoxQty  = parseInt(elementsArray.slice(3, 4).join("").trim()) || 1;
-
             var isMatched = false;
 
-            // 出荷リスト（CSV）から一致する品目番号を探索
             for (var idx = 0; idx < shipmentItems.length; idx++) {
-                var currentItem = shipmentItems[idx];
-                
+                var currentItem = shipmentItems.slice(idx, idx + 1).pop();
                 if (currentItem.code === scannedItemCode) {
-                    // QRコード内の入数（50個など）を実績数に加算
                     currentItem.scan += scannedBoxQty;
                     isMatched = true;
-
-                    // リアルタイムな状態変更の判定
-                    var resultArea = document.getElementById("result");
                     if (currentItem.scan === currentItem.target) {
-                        resultArea.className = "ok";
-                        resultArea.textContent = "完了 OK";
-                        document.getElementById('status').textContent = "【" + currentItem.name + "】検品完了！";
-                        vibOK();
+                        showResult(true, "完了");
+                        txtStatus.textContent = "【" + currentItem.name + "】検品完了！"; vibOK();
                     } else if (currentItem.scan > currentItem.target) {
-                        resultArea.className = "ng";
-                        resultArea.textContent = "過剰NG";
-                        document.getElementById('status').textContent = "【" + currentItem.name + "】受注数量を超過しました！";
-                        vibNG();
+                        showResult(false, "過剰NG");
+                        txtStatus.textContent = "【" + currentItem.name + "】数量超過（過剰NG）！"; vibNG();
                     } else {
-                        resultArea.className = "ok";
-                        resultArea.textContent = "加算OK";
-                        var remain = currentItem.target - currentItem.scan;
-                        document.getElementById('status').textContent = currentItem.name + " 残り: " + remain + "個";
-                        vibOK();
+                        showResult(true, "加算OK");
+                        txtStatus.textContent = currentItem.name + " 残り: " + (currentItem.target - currentItem.scan) + "個"; vibOK();
                     }
-
-                    appendSystemLog("【一致】品目:" + scannedItemCode + " に " + scannedBoxQty + " 個加算 (実績:" + currentItem.scan + ")");
+                    addLog("照合", "OK", currentItem.name + " +" + scannedBoxQty + " (計:" + currentItem.scan + ")");
                     break;
                 }
             }
-
             if (!isMatched) {
-                var resultArea = document.getElementById("result");
-                resultArea.className = "ng";
-                resultArea.textContent = "リスト外NG";
-                document.getElementById('status').textContent = "出荷リストに無い商品コードです！";
-                appendSystemLog("【NG】出荷リスト外の品目番号: " + scannedItemCode);
-                vibNG();
+                showResult(false, "リスト外NG");
+                txtStatus.textContent = "リストに無い商品です！";
+                addLog("照合", "NG", "未登録コード: " + scannedItemCode); vibNG();
             }
-
             refreshShipmentTable();
+            clearOverlayDelayed();
         }
-        // --- 過去コードの枠線描画・結果表示・ログ関数をそのまま移植 ---
+
         function drawBox(points) {
             const overlay = document.getElementById("overlay");
             const video = document.getElementById("video");
-            overlay.width = video.clientWidth;
-            overlay.height = video.clientHeight;
+            overlay.width = video.clientWidth; overlay.height = video.clientHeight;
             const ctx = overlay.getContext("2d");
             ctx.clearRect(0, 0, overlay.width, overlay.height);
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
-            ctx.beginPath();
+            ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4; ctx.beginPath();
             const scaleX = video.clientWidth / video.videoWidth;
             const scaleY = video.clientHeight / video.videoHeight;
-            ctx.moveTo(points[0].getX() * scaleX, points[0].getY() * scaleY);
-            for(let i=1; i<points.length; i++) {
-                ctx.lineTo(points[i].getX() * scaleX, points[i].getY() * scaleY);
+            var p0 = points.slice(0, 1).pop();
+            ctx.moveTo(p0.getX() * scaleX, p0.getY() * scaleY);
+            for(let i = 1; i < points.length; i++) {
+                var pi = points.slice(i, i + 1).pop();
+                ctx.lineTo(pi.getX() * scaleX, pi.getY() * scaleY);
             }
-            ctx.closePath();
-            ctx.stroke();
+            ctx.closePath(); ctx.stroke();
         }
 
         function clearOverlay() {
             const overlay = document.getElementById("overlay");
-            const octx = overlay.getContext("2d");
-            octx.clearRect(0, 0, overlay.width, overlay.height);
+            overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
+        }
+        function clearOverlayDelayed() { setTimeout(clearOverlay, 800); }
+
+        function showResult(ok, label) {
+            const r = document.getElementById("result");
+            r.textContent = label + (ok ? " OK" : " NG");
+            r.className = ok ? "ok" : "ng";
         }
 
-        function clearOverlayDelayed() {
-            setTimeout(clearOverlay, 800);
-        }
-
-        // システム用の補助ログ出力
-        function appendSystemLog(msg) {
+        function addLog(type, result, text) {
             const log = document.getElementById("log");
             const time = new Date().toLocaleTimeString();
-            log.textContent = `[${time}] ${msg}\n` + log.textContent;
+            log.textContent = `[${time}] ${type} → ${result} : ${text.replace(/[\x00-\x1F\x7F-\x9F]/g, " ")}\n` + log.textContent;
         }
     </script>
 </body>
