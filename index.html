@@ -1,3 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>出荷検品システム（ZXing強化版）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ZXingライブラリをCDNから読み込み -->
+    <script src="https://unpkg.com"></script>
+    <style>
+        body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; color: #333; }
+        .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        /* 映像表示エリア：過去の成功例に基づき、ブラックアウトを防ぐため最小サイズを確保 */
+        #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; display: none; }
+        #video { width: 100%; display: block; height: auto; min-height: 240px; }
+        
+        /* テーブルスタイル */
+        .table-wrapper { width: 100%; overflow-x: auto; margin-top: 10px; background: #fff; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; min-width: 500px; font-size: 13px; }
+        th, td { border-bottom: 1px solid #ddd; padding: 10px 8px; text-align: left; }
+        th { background: #f1f5f9; font-weight: bold; }
+        
+        /* 状態表示判定用カラー */
+        .status-normal { color: #666; font-weight: bold; }
+        .status-done { color: green; font-weight: bold; background: #e6ffe6; padding: 2px 6px; border-radius: 4px; border: 1px solid green; display: inline-block; }
+        .status-over { color: red; font-weight: bold; background: #ffe6e6; padding: 2px 6px; border-radius: 4px; border: 1px solid red; display: inline-block; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
+        
+        #status { font-size: 15px; font-weight: bold; color: #0d47a1; margin-bottom: 8px; text-align: center; }
+        #log { font-size: 12px; background: #eee; padding: 6px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <h1>出荷検品システム</h1>
+
+    <!-- 1. CSV読み込み -->
+    <div class="box">
+        <h2>1. 出荷指示書の読み込み</h2>
+        <input type="file" id="csvFile" accept=".csv">
+    </div>
+
+    <!-- 2. ZXingカメラ操作エリア -->
+    <div class="box">
+        <h2>2. 社内ラベル スキャン</h2>
+        <div id="status">CSVを読み込むとカメラを開始できます</div>
+        <button id="startBtn" disabled>カメラを起動する</button>
+        
+        <div id="video-wrapper">
+            <!-- ブラックアウトを防ぐため自動再生、ミュート、インライン再生属性を厳格に付与 -->
+            <video id="video" autoplay muted playsinline></video>
+        </div>
+        
+        <div id="log">スキャンログがここに表示されます</div>
+    </div>
+
+    <!-- 3. 出荷リスト表示 -->
+    <h2>出荷リスト</h2>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>機種分類</th>
+                    <th>品目番号</th>
+                    <th>品目名称</th>
+                    <th>受注数</th>
+                    <th>実績数</th>
+                    <th>不足数 / 状態</th>
+                </tr>
+            </thead>
+            <tbody id="listBody">
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #999; padding: 20px;">CSVファイルを読み込んでください</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
   <script>
         // --- 今回の出荷検品用状態管理変数 ---
         var shipmentItems = [];
