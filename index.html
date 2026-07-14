@@ -81,6 +81,7 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
+        // QR専用リーダーをボタン押下前は安全に器だけ用意
         try {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
@@ -130,8 +131,9 @@
             });
         }
 
-        function vibOK() { if(navigator.vibrate) navigator.vibrate(100); }
-        function vibNG() { if(navigator.vibrate) navigator.vibrate(); }
+        // バイブレーション処理をすべて完全に無効化（ご要望を反映）
+        function vibOK() { }
+        function vibNG() { }
 
         async function startMainScan() {
             activeScanningMode = "SHIPMENT_CHECK";
@@ -146,18 +148,34 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
+        // 過去の成功コードと100%同じ「デバイス探索と起動の完全一致フロー」に修正
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
             try {
-                if (!selectedDeviceId) {
-                    const videoInputDevices = await codeReader.listVideoInputDevices();
-                    const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.deviceId;
-                }
-                const constraints = { video: { deviceId: { exact: selectedDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: { ideal: "continuous" } } };
+                // ボタンを押したこの瞬間にのみデバイスリストを要求（ブラウザのセキュリティロックを完全回避）
+                const videoInputDevices = await codeReader.listVideoInputDevices();
+                const backCamera = videoInputDevices.find(device => 
+                    device.label.toLowerCase().includes('back') || 
+                    device.label.toLowerCase().includes('environment')
+                );
+                
+                // 過去実績コードに則り、背面がなければ最初のIDを割り当て
+                selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
+
+                const constraints = { 
+                    video: { 
+                        deviceId: { exact: selectedDeviceId }, 
+                        width: { ideal: 1920 }, 
+                        height: { ideal: 1080 }, 
+                        focusMode: { ideal: "continuous" } 
+                    } 
+                };
+                
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                htmlVideo.srcObject = stream; isStreamActive = true;
+                htmlVideo.srcObject = stream; 
+                isStreamActive = true;
+                
                 codeReader.decodeFromStream(stream, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now(); if (now - lastScanTime < 1500) return;
@@ -165,26 +183,29 @@
                         handleIncomingScan(result.text);
                     }
                 });
-            } catch (err) { txtStatus.textContent = "カメラ起動エラー"; }
+            } catch (err) { 
+                console.error("Camera system freeze:", err);
+                txtStatus.textContent = "カメラ起動エラー: 再度スキャン開始を押すか、カメラの許可を確認してください。"; 
+            }
         }
 
         function handleIncomingScan(qrText) {
             if (!qrText) return;
             var arr = qrText.split(",");
-            if (arr.length < 4) { addLog("エラー", "NG", "項目不足"); vibNG(); return; }
+            if (arr.length < 4) { addLog("エラー", "NG", "項目不足"); return; }
             var qCode = arr.slice(0, 1).join("").trim(), qQty = parseInt(arr.slice(3, 4).join("").trim()) || 1, hit = false;
 
             for (var i = 0; i < shipmentItems.length; i++) {
                 var item = shipmentItems.slice(i, i + 1).pop();
                 if (item.code === qCode) {
                     item.scan += qQty; hit = true;
-                    if (item.scan === item.target) { showResult(true, "完了"); vibOK(); }
-                    else if (item.scan > item.target) { showResult(false, "過剰NG"); vibNG(); }
-                    else { showResult(true, "加算OK"); vibOK(); }
+                    if (item.scan === item.target) { showResult(true, "完了"); }
+                    else if (item.scan > item.target) { showResult(false, "過剰NG"); }
+                    else { showResult(true, "加算OK"); }
                     addLog("照合", "OK", item.name + " +" + qQty); break;
                 }
             }
-            if (!hit) { showResult(false, "リスト外NG"); addLog("照合", "NG", "未登録:" + qCode); vibNG(); }
+            if (!hit) { showResult(false, "リスト外NG"); addLog("照合", "NG", "未登録:" + qCode); }
             refreshShipmentTable(); clearOverlayDelayed();
         }
 
