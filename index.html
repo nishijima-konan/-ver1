@@ -4,13 +4,16 @@
     <meta charset="UTF-8">
     <title>出荷検品システム</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; }
         .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; }
         button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; }
-        #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; display: none; }
-        #video { width: 100%; display: block; border-radius: 8px; background: #000; }
+        
+        /* 過去の成功コードからビデオラッパーと表示スタイルを完全移植 */
+        #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; display: none; }
+        #video { width: 100%; display: block; transform: scaleX(1); }
+        
         table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #fff; font-size: 13px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #f1f5f9; }
@@ -64,7 +67,7 @@
         var stat = document.getElementById("status");
         var logBox = document.getElementById("log");
 
-        // CSVファイル選択時のイベント
+        // CSV読み込み
         document.getElementById("csvFile").addEventListener("change", function(e) {
             var file = e.target.files.item(0);
             if (!file) return;
@@ -75,12 +78,10 @@
             reader.readAsText(file, "Shift_JIS");
         });
 
-        // CSVデータのパース処理（バグ回避のため大カッコを排除）
         function parseCsv(text) {
             var lines = text.split(/\r\n|\n/).filter(line => line.trim() !== "");
             if (lines.length < 4) return;
 
-            // 2行目（インデックス1）の日本語ヘッダー行を安全に取得
             var headerRowText = lines.slice(1, 2).join("");
             var labels = headerRowText.split(",");
             
@@ -91,13 +92,11 @@
 
             items = [];
             
-            // 4行目（インデックス3）から最終行までループ処理
             var dataLines = lines.slice(3);
             dataLines.forEach(function(line) {
                 var cols = line.split(",");
                 if (cols.length <= 1) return;
                 
-                // 列データを安全に抽出する関数
                 var getType = cols.slice(iType, iType + 1).join("").trim();
                 var getCode = cols.slice(iCode, iCode + 1).join("").trim();
                 var getName = cols.slice(iName, iName + 1).join("").trim();
@@ -117,7 +116,6 @@
             btn.disabled = false;
         }
 
-        // 画面テーブルの描画
         function showTable() {
             var tbody = document.getElementById("listBody");
             tbody.innerHTML = "";
@@ -133,15 +131,23 @@
             });
         }
 
-        // カメラ制御
+        // カメラ制御（過去の成功コードの設定に完全修正）
         btn.addEventListener("click", async function() {
             if (active) {
                 stopCam();
                 return;
             }
             stat.textContent = "カメラ起動中...";
+            
+            // 過去コードの挙動に合わせ、あえて解像度を固定せず、背面・標準モードでブラウザに最適に任せる設定
+            var constraints = { 
+                video: { 
+                    facingMode: "environment" 
+                } 
+            };
+            
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 720 } });
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 video.setAttribute("playsinline", true);
                 video.play();
@@ -156,7 +162,6 @@
             }
         });
 
-        // カメラ停止
         function stopCam() {
             if (stream) stream.getTracks().forEach(track => track.stop());
             video.srcObject = null;
@@ -167,7 +172,6 @@
             active = false;
         }
 
-        // ループ動画解析
         function loop() {
             if (!active) return;
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -179,6 +183,7 @@
 
                 if (qr) {
                     var now = Date.now();
+                    // 連続読み込みを防止するため2.5秒の間隔を空ける
                     if (qr.data !== lastCode || (now - lastTime > 2500)) {
                         lastCode = qr.data;
                         lastTime = now;
@@ -189,7 +194,6 @@
             requestAnimationFrame(loop);
         }
 
-        // QR判定と突合処理
         function checkQr(text) {
             var d = new Date();
             var time = "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "] ";
@@ -198,7 +202,6 @@
             var arr = text.split(",");
             if (arr.length < 4) return;
 
-            // インデックス指定によるバグ消去を防ぐため、sliceで安全にデータを取得
             var qrCode = arr.slice(0, 1).join("").trim();
             var qrQty  = parseInt(arr.slice(3, 4).join("").trim()) || 1;
             var hit = false;
