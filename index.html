@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出荷検品システム</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f7f6; }
+        h1, h2 { color: #333; }
+        .config-section, .scan-section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input[type="file"], input[type="text"] { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+        input[type="text"] { width: 400px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .status-normal { color: #333; }
+        .status-done { color: green; font-weight: bold; background-color: #e6f4ea; }
+        .status-over { color: red; font-weight: bold; background-color: #fce8e6; animation: blink 1s infinite; }
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.5;} 100% {opacity: 1;} }
+    </style>
+</head>
+<body>
+
+    <h1>出荷検品システム</h1>
+
+    <!-- 1. CSV取り込みエリア -->
+    <div class="config-section">
+        <h2>1. 出荷指示書の読み込み</h2>
+        <input type="file" id="csvFile" accept=".csv">
+    </div>
+
+    <!-- 2. QRコードスキャンエリア -->
+    <div class="scan-section">
+        <h2>2. QRコードスキャン</h2>
+        <input type="text" id="qrInput" placeholder="ここにQRコードをスキャン" disabled>
+        <p style="font-size: 12px; color: #666;">※CSV読み込み後にスキャン可能になります。入力後Enterで確定。</p>
+    </div>
+
+    <!-- 3. 出荷リスト表示エリア -->
+    <h2>出荷リスト</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>出荷予定日</th>
+                <th>機種分類</th>
+                <th>品目番号</th>
+                <th>品目名称</th>
+                <th>受注数量</th>
+                <th>不足数 / 状態</th>
+            </tr>
+        </thead>
+        <tbody id="listBody">
+            <tr>
+                <td colspan="6" style="text-align: center; color: #999;">CSVファイルを読み込んでください</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        let shipmentData = [];
+
+        // CSVファイルの読み込み処理
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const text = event.target.result;
+                parseCSV(text);
+            };
+            // 日本語の文字化けを防ぐためShift_JISで読み込み
+            reader.readAsText(file, 'Shift_JIS'); 
+        });
+
+        // CSVパース（解析）
+        function parseCSV(text) {
+            const lines = text.split(/\r\n|\n/);
+            if (lines.length < 4) return; // ヘッダー等で3行あるため
+
+            // 2行目の日本語ラベルからインデックスを取得
+            const labels = lines[1].split(',');
+            const idxDate = labels.indexOf('#Label') + 2; // 「出荷予定日」の位置（実データ列はインデックス2）
+            const idxType = labels.indexOf('機種分類');
+            const idxCode = labels.indexOf('品目番号');
+            const idxName = labels.indexOf('品目名称');
+            const idxQty = labels.indexOf('受注数'); // CSV内は「受注数」
+
+            shipmentData = [];
+            
+            // 4行目（インデックス3）からデータスタート
+            for (let i = 3; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const cols = lines[i].split(',');
+                
+                shipmentData.push({
+                    date: cols[2] || '',      // 出荷予定日
+                    type: cols[4] || '',      // 機種分類
+                    code: cols[5] || '',      // 品目番号
+                    name: cols[7] || '',      // 品目名称
+                    targetQty: parseInt(cols[9]) || 0, // 受注数
+                    scanQty: 0                // 初期スキャン数
+                });
+            }
+
+            renderTable();
+            document.getElementById('qrInput').disabled = false;
+            document.getElementById('qrInput').focus();
+        }
+
+        // テーブルの描画
+        function renderTable() {
+            const tbody = document.getElementById('listBody');
+            tbody.innerHTML = '';
+
+            shipmentData.forEach((item) => {
+                const tr = document.createElement('tr');
+                
+                let statusText = '';
+                let statusClass = 'status-normal';
+                
+                // 不足数・状態の判定ロジック
+                if (item.scanQty === 0) {
+                    statusText = `不足: ${item.targetQty}`;
+                } else if (item.scanQty < item.targetQty) {
+                    statusText = `不足: ${item.targetQty - item.scanQty}`;
+                } else if (item.scanQty === item.targetQty) {
+                    statusText = '完了';
+                    statusClass = 'status-done';
+                } else {
+                    statusText = '過剰NG';
+                    statusClass = 'status-over';
+                }
+
+                tr.innerHTML = `
+                    <td>${item.date}</td>
+                    <td>${item.type}</td>
+                    <td>${item.code}</td>
+                    <td>${item.name}</td>
+                    <td>${item.targetQty}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // QRコード入力（Enterキー検知）
+        document.getElementById('qrInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const qrText = this.value.trim();
+                if (!qrText) return;
+
+                matchQR(qrText);
+                this.value = ''; // 入力欄をクリア
+            }
+        });
+
+        // QRデータと出荷リストの突合処理
+        function matchQR(qrText) {
+            let found = false;
+
+            // QRコードの中に「品目番号」が含まれているかで仮判定しています
+            for (let item of shipmentData) {
+                if (qrText.includes(item.code)) {
+                    item.scanQty += 1; 
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                alert('該当する商品が出荷リストに見つかりません：' + qrText);
+            }
+
+            renderTable();
+        }
+    </script>
+</body>
+</html>
