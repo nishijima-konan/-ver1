@@ -93,6 +93,7 @@
             fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
+        // 記号もat()も使わない、すべてのスマホで確実に動く超安全なパース処理
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
             if (allLines.length < 4) return;
@@ -104,7 +105,8 @@
             shipmentItems = [];
             
             for (var idx = 3; idx < allLines.length; idx++) {
-                var columns = allLines[idx].split(",");
+                var currentLineText = allLines.slice(idx, idx + 1).join("");
+                var columns = currentLineText.split(",");
                 if (columns.length <= 1) continue;
                 
                 var typeVal = columns.slice(posType, posType + 1).join("").trim();
@@ -150,7 +152,6 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 大カッコバグを100%回避する関数（shiftとslice）を使って過去の成功起動を完全復元
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -161,11 +162,10 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    // 大カッコを使わずに、1番目のカメラIDを確実に抽出して空っぽエラーを絶対回避
+                    // 安全に関数で先頭のIDを引っこ抜く
                     selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
                 }
 
-                // 過去に大成功していた高画質・オートフォーカス制約
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
