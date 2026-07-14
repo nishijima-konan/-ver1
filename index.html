@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>出荷検品システム（ZXing版）</title>
+    <title>出荷検品システム（ZXing強化版）</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- ZXingライブラリをCDNから読み込み -->
     <script src="https://unpkg.com"></script>
@@ -12,9 +12,9 @@
         button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; }
         button:disabled { background: #ccc; cursor: not-allowed; }
         
-        /* 映像表示エリア */
+        /* 映像表示エリア：過去の成功例に基づき、ブラックアウトを防ぐため最小サイズを確保 */
         #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; display: none; }
-        #video { width: 100%; display: block; }
+        #video { width: 100%; display: block; height: auto; min-height: 240px; }
         
         /* テーブルスタイル */
         .table-wrapper { width: 100%; overflow-x: auto; margin-top: 10px; background: #fff; border-radius: 8px; }
@@ -49,7 +49,8 @@
         <button id="startBtn" disabled>カメラを起動する</button>
         
         <div id="video-wrapper">
-            <video id="video"></video>
+            <!-- ブラックアウトを防ぐため自動再生、ミュート、インライン再生属性を厳格に付与 -->
+            <video id="video" autoplay muted playsinline></video>
         </div>
         
         <div id="log">スキャンログがここに表示されます</div>
@@ -79,7 +80,6 @@
 <script>
         var items = [];
         var codeReader = null;
-        var selectedCameraId = null;
         var isCameraActive = false;
         var lastScannedText = "";
         var lastScannedTime = 0;
@@ -92,26 +92,6 @@
         // ページ読み込み時にZXingのコードリーダーを初期化
         window.addEventListener("load", function() {
             codeReader = new ZXing.BrowserMultiFormatReader();
-            
-            // 使用可能なカメラ（背面カメラ）を自動探索
-            codeReader.listVideoInputDevices()
-                .then(function(videoDevices) {
-                    // 背面（environmentやback）っぽい名前のカメラを優先選択
-                    selectedCameraId = videoDevices.map(function(device) {
-                        return device.deviceId;
-                    }).slice(0, 1).join(""); // デフォルトは1番目のカメラ
-                    
-                    videoDevices.forEach(function(device) {
-                        var lbl = device.label.toLowerCase();
-                        if (lbl.indexOf("back") !== -1 || lbl.indexOf("environment") !== -1 || lbl.indexOf("背面") !== -1) {
-                            selectedCameraId = device.deviceId;
-                        }
-                    });
-                })
-                .catch(function(err) {
-                    console.error(err);
-                    statusDiv.textContent = "カメラデバイスの取得に失敗しました。";
-                });
         });
 
         // CSVファイルの読み込み
@@ -191,18 +171,25 @@
             });
         }
 
-        // カメラボタンのクリック動作（ZXingの連続スキャン機能を起動）
+        // カメラボタンのクリック動作（ブラウザ環境に直接背面レンズを選ばせる安全な方式に変更）
         startBtn.addEventListener("click", function() {
             if (isCameraActive) {
                 stopZxingCamera();
                 return;
             }
 
-            statusDiv.textContent = "ZXingカメラを起動中...";
+            statusDiv.textContent = "カメラを起動中...";
             document.getElementById("video-wrapper").style.display = "block";
             
-            // ZXingのリアルタイム連続スキャン処理
-            codeReader.decodeFromVideoDevice(selectedCameraId, "video", function(result, error) {
+            // 過去コードの成功環境に則り、特定のデバイスIDを狙わず、環境全体から背面（environment）を要求
+            var captureConstraints = {
+                video: {
+                    facingMode: "environment"
+                }
+            };
+
+            // 最も認識成功率が高く、ブラックアウトが起きにくい制約ベースのデコード処理
+            codeReader.decodeFromConstraints(captureConstraints, "video", function(result, error) {
                 if (result) {
                     var now = Date.now();
                     // 同じ社内ラベルの連続誤認識を防ぐための2.5秒インターバル
@@ -239,25 +226,24 @@
         function matchInternalLabel(qrText) {
             var d = new Date();
             var timeStr = "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "] ";
-            logBox.textContent = timeStr + "読取: " + qrText + "\n" + logBox.textContent;
 
             // 社内ラベルをカンマで分解
             var arr = qrText.split(",");
             if (arr.length < 4) {
-                logBox.textContent = timeStr + "【NG】データ項目数が足りないQRコードです\n" + logBox.textContent;
+                logBox.textContent = timeStr + "【NG】データ不足: " + qrText + "\n" + logBox.textContent;
                 return;
             }
 
-            // 安全に1番目（品目番号）と4番目（箱入数）を取得
+            // 1番目（品目番号）と4番目（箱入数）を取得
             var qrCode = arr.slice(0, 1).join("").trim();
             var qrQty  = parseInt(arr.slice(3, 4).join("").trim()) || 1;
             var hit = false;
 
             for (var i = 0; i < items.length; i++) {
                 if (items[i].code === qrCode) {
-                    items[i].scan += qrQty; // スキャンされた箱の数量（50個など）を自動加算
+                    items[i].scan += qrQty; // 箱の数量（50個など）を実績数に加算
                     hit = true;
-                    logBox.textContent = timeStr + "【一致】" + items[i].name + " に " + qrQty + " 個を登録\n" + logBox.textContent;
+                    logBox.textContent = timeStr + "【一致】" + items[i].name + " を " + qrQty + " 個加算\n" + logBox.textContent;
                     if (navigator.vibrate) navigator.vibrate(200); // 成功バイブ
                     break;
                 }
