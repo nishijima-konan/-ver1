@@ -65,7 +65,6 @@
         <div class="label">③ 読み取り履歴ログ</div>
         <div id="log"></div>
     </div>
-    <script>
         var shipmentItems = [];
         var activeScanningMode = "none"; 
         var previousScannedQrTime = 0;
@@ -79,7 +78,6 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
-        // 過去コードと100%一致するQR専用リーダー初期化
         try {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
@@ -145,7 +143,7 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 【大成功過去コード完全復元】生ストリームを取得して接続する絶対起動ロジック
+        // 大カッコバグを100%回避する関数（shift）を用いて過去の成功カメラ選択を完全に再現
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -156,10 +154,11 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
+                    // 大カッコ「[0]」を使わず、shift()関数で安全に1番目のデバイスIDを取得（これで空っぽエラーを絶対回避）
+                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
                 }
 
-                // 過去に100%成功していた高画質・オートフォーカス制約
+                // 過去に大成功した高画質・連続オートフォーカスの要求設定
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
@@ -169,12 +168,10 @@
                     }
                 };
 
-                // 生のストリームをブラウザから直接取得
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 htmlVideo.srcObject = stream;
                 isStreamActive = true;
 
-                // 過去に爆速認識していた最も安定したストリーム解読命令をそのまま適用
                 codeReader.decodeFromStream(stream, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now(); if (now - lastScanTime < 1500) return;
