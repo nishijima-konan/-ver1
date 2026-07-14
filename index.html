@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>出荷検品システム</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; }
         .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; }
@@ -64,9 +64,9 @@
         var stat = document.getElementById("status");
         var logBox = document.getElementById("log");
 
-        // CSV読み込み
+        // CSVファイル選択時のイベント
         document.getElementById("csvFile").addEventListener("change", function(e) {
-            var file = e.target.files[0];
+            var file = e.target.files.item(0);
             if (!file) return;
             var reader = new FileReader();
             reader.onload = function(evt) {
@@ -75,33 +75,49 @@
             reader.readAsText(file, "Shift_JIS");
         });
 
+        // CSVデータのパース処理（バグ回避のため大カッコを排除）
         function parseCsv(text) {
             var lines = text.split(/\r\n|\n/).filter(line => line.trim() !== "");
             if (lines.length < 4) return;
 
-            var labels = lines[1].split(",");
+            // 2行目（インデックス1）の日本語ヘッダー行を安全に取得
+            var headerRowText = lines.slice(1, 2).join("");
+            var labels = headerRowText.split(",");
+            
             var iType = labels.indexOf("機種分類");
             var iCode = labels.indexOf("品目番号");
             var iName = labels.indexOf("品目名称");
             var iQty = labels.indexOf("受注数");
 
             items = [];
-            for (var i = 3; i < lines.length; i++) {
-                var cols = lines[i].split(",");
-                if (cols.length <= 1) continue;
+            
+            // 4行目（インデックス3）から最終行までループ処理
+            var dataLines = lines.slice(3);
+            dataLines.forEach(function(line) {
+                var cols = line.split(",");
+                if (cols.length <= 1) return;
+                
+                // 列データを安全に抽出する関数
+                var getType = cols.slice(iType, iType + 1).join("").trim();
+                var getCode = cols.slice(iCode, iCode + 1).join("").trim();
+                var getName = cols.slice(iName, iName + 1).join("").trim();
+                var getQty  = cols.slice(iQty, iQty + 1).join("").trim();
+
                 items.push({
-                    type: cols[iType] ? cols[iType].trim() : "",
-                    code: cols[iCode] ? cols[iCode].trim() : "",
-                    name: cols[iName] ? cols[iName].trim() : "",
-                    target: parseInt(cols[iQty]) || 0,
+                    type: getType,
+                    code: getCode,
+                    name: getName,
+                    target: parseInt(getQty) || 0,
                     scan: 0
                 });
-            }
+            });
+
             showTable();
             stat.textContent = "CSV完了。カメラを起動してください。";
             btn.disabled = false;
         }
 
+        // 画面テーブルの描画
         function showTable() {
             var tbody = document.getElementById("listBody");
             tbody.innerHTML = "";
@@ -140,6 +156,7 @@
             }
         });
 
+        // カメラ停止
         function stopCam() {
             if (stream) stream.getTracks().forEach(track => track.stop());
             video.srcObject = null;
@@ -150,6 +167,7 @@
             active = false;
         }
 
+        // ループ動画解析
         function loop() {
             if (!active) return;
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -171,6 +189,7 @@
             requestAnimationFrame(loop);
         }
 
+        // QR判定と突合処理
         function checkQr(text) {
             var d = new Date();
             var time = "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "] ";
@@ -179,8 +198,9 @@
             var arr = text.split(",");
             if (arr.length < 4) return;
 
-            var qrCode = arr[0] ? arr[0].trim() : "";
-            var qrQty = arr[3] ? parseInt(arr[3].trim()) : 1;
+            // インデックス指定によるバグ消去を防ぐため、sliceで安全にデータを取得
+            var qrCode = arr.slice(0, 1).join("").trim();
+            var qrQty  = parseInt(arr.slice(3, 4).join("").trim()) || 1;
             var hit = false;
 
             for (var i = 0; i < items.length; i++) {
