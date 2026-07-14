@@ -2,88 +2,138 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>出荷検品システム</title>
+    <title>出荷検品システム（ZXing版）</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
+    <!-- ZXingライブラリをCDNから読み込み -->
+    <script src="https://unpkg.com"></script>
     <style>
-        body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; }
-        .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; }
-        button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; }
+        body { font-family: sans-serif; padding: 10px; margin: 0; background: #f5f5f5; color: #333; }
+        .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 12px; border-radius: 8px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        button { padding: 12px; font-size: 16px; width: 100%; font-weight: bold; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         
-        /* 過去の成功コードからビデオラッパーと表示スタイルを完全移植 */
+        /* 映像表示エリア */
         #video-wrapper { width: 100%; max-width: 380px; margin: 10px auto; position: relative; overflow: hidden; border-radius: 8px; border: 2px solid #ccc; background: #000; display: none; }
-        #video { width: 100%; display: block; transform: scaleX(1); }
+        #video { width: 100%; display: block; }
         
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #fff; font-size: 13px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background: #f1f5f9; }
-        .status-done { color: green; font-weight: bold; background: #e6ffe6; }
-        .status-over { color: red; font-weight: bold; background: #ffe6e6; animation: blink 1s infinite; }
+        /* テーブルスタイル */
+        .table-wrapper { width: 100%; overflow-x: auto; margin-top: 10px; background: #fff; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; min-width: 500px; font-size: 13px; }
+        th, td { border-bottom: 1px solid #ddd; padding: 10px 8px; text-align: left; }
+        th { background: #f1f5f9; font-weight: bold; }
+        
+        /* 状態表示判定用カラー */
+        .status-normal { color: #666; font-weight: bold; }
+        .status-done { color: green; font-weight: bold; background: #e6ffe6; padding: 2px 6px; border-radius: 4px; border: 1px solid green; display: inline-block; }
+        .status-over { color: red; font-weight: bold; background: #ffe6e6; padding: 2px 6px; border-radius: 4px; border: 1px solid red; display: inline-block; animation: blink 1s infinite; }
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
-        #log { font-size: 12px; background: #eee; padding: 6px; max-height: 100px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; }
+        
+        #status { font-size: 15px; font-weight: bold; color: #0d47a1; margin-bottom: 8px; text-align: center; }
+        #log { font-size: 12px; background: #eee; padding: 6px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; border-radius: 4px; }
     </style>
 </head>
 <body>
 
     <h1>出荷検品システム</h1>
 
+    <!-- 1. CSV読み込み -->
     <div class="box">
-        <h2>1. CSV読み込み</h2>
+        <h2>1. 出荷指示書の読み込み</h2>
         <input type="file" id="csvFile" accept=".csv">
     </div>
 
+    <!-- 2. ZXingカメラ操作エリア -->
     <div class="box">
-        <h2>2. QRスキャン</h2>
-        <div id="status" style="font-weight:bold;color:#0d47a1;margin-bottom:8px;">CSVを選んでください</div>
+        <h2>2. 社内ラベル スキャン</h2>
+        <div id="status">CSVを読み込むとカメラを開始できます</div>
         <button id="startBtn" disabled>カメラを起動する</button>
+        
         <div id="video-wrapper">
-            <video id="video" playsinline></video>
-            <canvas id="canvas" style="display:none;"></canvas>
+            <video id="video"></video>
         </div>
-        <div id="log">ログがここに表示されます</div>
+        
+        <div id="log">スキャンログがここに表示されます</div>
     </div>
 
+    <!-- 3. 出荷リスト表示 -->
     <h2>出荷リスト</h2>
-    <table>
-        <thead>
-            <tr><th>機種</th><th>品目番号</th><th>品目名称</th><th>受注</th><th>実績</th><th>状態</th></tr>
-        </thead>
-        <tbody id="listBody">
-            <tr><td colspan="6" style="text-align:center;color:#999;">CSVを読み込んでください</td></tr>
-        </tbody>
-    </table>
-
-    <script>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>機種分類</th>
+                    <th>品目番号</th>
+                    <th>品目名称</th>
+                    <th>受注数</th>
+                    <th>実績数</th>
+                    <th>不足数 / 状態</th>
+                </tr>
+            </thead>
+            <tbody id="listBody">
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #999; padding: 20px;">CSVファイルを読み込んでください</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+<script>
         var items = [];
-        var stream = null;
-        var active = false;
-        var lastCode = "";
-        var lastTime = 0;
+        var codeReader = null;
+        var selectedCameraId = null;
+        var isCameraActive = false;
+        var lastScannedText = "";
+        var lastScannedTime = 0;
 
-        var video = document.getElementById("video");
-        var canvas = document.getElementById("canvas");
-        var ctx = canvas.getContext("2d");
-        var btn = document.getElementById("startBtn");
-        var stat = document.getElementById("status");
+        var videoElem = document.getElementById("video");
+        var startBtn = document.getElementById("startBtn");
+        var statusDiv = document.getElementById("status");
         var logBox = document.getElementById("log");
 
-        // CSV読み込み
+        // ページ読み込み時にZXingのコードリーダーを初期化
+        window.addEventListener("load", function() {
+            codeReader = new ZXing.BrowserMultiFormatReader();
+            
+            // 使用可能なカメラ（背面カメラ）を自動探索
+            codeReader.listVideoInputDevices()
+                .then(function(videoDevices) {
+                    // 背面（environmentやback）っぽい名前のカメラを優先選択
+                    selectedCameraId = videoDevices.map(function(device) {
+                        return device.deviceId;
+                    }).slice(0, 1).join(""); // デフォルトは1番目のカメラ
+                    
+                    videoDevices.forEach(function(device) {
+                        var lbl = device.label.toLowerCase();
+                        if (lbl.indexOf("back") !== -1 || lbl.indexOf("environment") !== -1 || lbl.indexOf("背面") !== -1) {
+                            selectedCameraId = device.deviceId;
+                        }
+                    });
+                })
+                .catch(function(err) {
+                    console.error(err);
+                    statusDiv.textContent = "カメラデバイスの取得に失敗しました。";
+                });
+        });
+
+        // CSVファイルの読み込み
         document.getElementById("csvFile").addEventListener("change", function(e) {
             var file = e.target.files.item(0);
             if (!file) return;
+            
             var reader = new FileReader();
             reader.onload = function(evt) {
-                parseCsv(evt.target.result);
+                parseCsvData(evt.target.result);
             };
-            reader.readAsText(file, "Shift_JIS");
+            reader.readAsText(file, "Shift_JIS"); 
         });
 
-        function parseCsv(text) {
-            var lines = text.split(/\r\n|\n/).filter(line => line.trim() !== "");
+        // CSVデータのパース（解析）
+        function parseCsvData(text) {
+            var lines = text.split(/\r\n|\n/).filter(function(line) { return line.trim() !== ""; });
             if (lines.length < 4) return;
 
-            var headerRowText = lines.slice(1, 2).join("");
-            var labels = headerRowText.split(",");
+            // 2行目の日本語ラベルから位置（インデックス）を動的に検索
+            var headerLine = lines.slice(1, 2).join("");
+            var labels = headerLine.split(",");
             
             var iType = labels.indexOf("機種分類");
             var iCode = labels.indexOf("品目番号");
@@ -92,130 +142,133 @@
 
             items = [];
             
+            // 4行目（インデックス3）から最終行までデータ処理
             var dataLines = lines.slice(3);
             dataLines.forEach(function(line) {
                 var cols = line.split(",");
                 if (cols.length <= 1) return;
                 
-                var getType = cols.slice(iType, iType + 1).join("").trim();
-                var getCode = cols.slice(iCode, iCode + 1).join("").trim();
-                var getName = cols.slice(iName, iName + 1).join("").trim();
-                var getQty  = cols.slice(iQty, iQty + 1).join("").trim();
+                var typeVal = cols.slice(iType, iType + 1).join("").trim();
+                var codeVal = cols.slice(iCode, iCode + 1).join("").trim();
+                var nameVal = cols.slice(iName, iName + 1).join("").trim();
+                var qtyVal  = cols.slice(iQty, iQty + 1).join("").trim();
 
                 items.push({
-                    type: getType,
-                    code: getCode,
-                    name: getName,
-                    target: parseInt(getQty) || 0,
+                    type: typeVal,
+                    code: codeVal,
+                    name: nameVal,
+                    target: parseInt(qtyVal) || 0,
                     scan: 0
                 });
             });
 
-            showTable();
-            stat.textContent = "CSV完了。カメラを起動してください。";
-            btn.disabled = false;
+            renderTableDisplay();
+            statusDiv.textContent = "CSV読み込み完了。カメラを開始してください。";
+            startBtn.disabled = false;
         }
 
-        function showTable() {
+        // リスト（テーブル）表示の更新
+        function renderTableDisplay() {
             var tbody = document.getElementById("listBody");
             tbody.innerHTML = "";
+            
             items.forEach(function(item) {
                 var tr = document.createElement("tr");
                 var stText = "不足: " + (item.target - item.scan);
                 var stClass = "";
-                if (item.scan === item.target) { stText = "完了"; stClass = "status-done"; }
-                if (item.scan > item.target) { stText = "過剰NG"; stClass = "status-over"; }
+                
+                if (item.scan === item.target) { 
+                    stText = "完了"; 
+                    stClass = "status-done"; 
+                }
+                if (item.scan > item.target) { 
+                    stText = "過剰NG"; 
+                    stClass = "status-over"; 
+                }
 
-                tr.innerHTML = "<td>" + item.type + "</td><td>" + item.code + "</td><td>" + item.name + "</td><td>" + item.target + "</td><td>" + item.scan + "</td><td class='" + stClass + "'>" + stText + "</td>";
+                tr.innerHTML = "<td>" + item.type + "</td><td><strong>" + item.code + "</strong></td><td>" + item.name + "</td><td>" + item.target + "</td><td><strong>" + item.scan + "</strong></td><td class='" + stClass + "'>" + stText + "</td>";
                 tbody.appendChild(tr);
             });
         }
 
-        // カメラ制御（過去の成功コードの設定に完全修正）
-        btn.addEventListener("click", async function() {
-            if (active) {
-                stopCam();
+        // カメラボタンのクリック動作（ZXingの連続スキャン機能を起動）
+        startBtn.addEventListener("click", function() {
+            if (isCameraActive) {
+                stopZxingCamera();
                 return;
             }
-            stat.textContent = "カメラ起動中...";
+
+            statusDiv.textContent = "ZXingカメラを起動中...";
+            document.getElementById("video-wrapper").style.display = "block";
             
-            // 過去コードの挙動に合わせ、あえて解像度を固定せず、背面・標準モードでブラウザに最適に任せる設定
-            var constraints = { 
-                video: { 
-                    facingMode: "environment" 
-                } 
-            };
-            
-            try {
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                video.setAttribute("playsinline", true);
-                video.play();
-                document.getElementById("video-wrapper").style.display = "block";
-                btn.textContent = "カメラを停止する";
-                btn.style.background = "#dc3545";
-                stat.textContent = "QRを写してください";
-                active = true;
-                requestAnimationFrame(loop);
-            } catch (err) {
-                stat.textContent = "カメラ起動失敗。権限を確認してください。";
-            }
-        });
-
-        function stopCam() {
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            video.srcObject = null;
-            document.getElementById("video-wrapper").style.display = "none";
-            btn.textContent = "カメラを起動する";
-            btn.style.background = "#28a745";
-            stat.textContent = "停止しました";
-            active = false;
-        }
-
-        function loop() {
-            if (!active) return;
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                canvas.height = video.videoHeight;
-                canvas.width = video.videoWidth;
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                var qr = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-
-                if (qr) {
+            // ZXingのリアルタイム連続スキャン処理
+            codeReader.decodeFromVideoDevice(selectedCameraId, "video", function(result, error) {
+                if (result) {
                     var now = Date.now();
-                    // 連続読み込みを防止するため2.5秒の間隔を空ける
-                    if (qr.data !== lastCode || (now - lastTime > 2500)) {
-                        lastCode = qr.data;
-                        lastTime = now;
-                        checkQr(qr.data);
+                    // 同じ社内ラベルの連続誤認識を防ぐための2.5秒インターバル
+                    if (result.text !== lastScannedText || (now - lastScannedTime > 2500)) {
+                        lastScannedText = result.text;
+                        lastScannedTime = now;
+                        matchInternalLabel(result.text);
                     }
                 }
+                if (error && !(error instanceof ZXing.NotFoundError)) {
+                    console.error(error);
+                }
+            });
+
+            startBtn.textContent = "カメラを停止する";
+            startBtn.style.background = "#dc3545";
+            statusDiv.textContent = "社内ラベルのQRを写してください";
+            isCameraActive = true;
+        });
+
+        // カメラ停止
+        function stopZxingCamera() {
+            if (codeReader) {
+                codeReader.reset();
             }
-            requestAnimationFrame(loop);
+            document.getElementById("video-wrapper").style.display = "none";
+            startBtn.textContent = "カメラを起動する";
+            startBtn.style.background = "#28a745";
+            statusDiv.textContent = "カメラを停止しました";
+            isCameraActive = false;
         }
 
-        function checkQr(text) {
+        // 社内ラベルのQRテキストと出荷リストの突合処理
+        function matchInternalLabel(qrText) {
             var d = new Date();
-            var time = "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "] ";
-            logBox.textContent = time + "読取: " + text + "\n" + logBox.textContent;
+            var timeStr = "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "] ";
+            logBox.textContent = timeStr + "読取: " + qrText + "\n" + logBox.textContent;
 
-            var arr = text.split(",");
-            if (arr.length < 4) return;
+            // 社内ラベルをカンマで分解
+            var arr = qrText.split(",");
+            if (arr.length < 4) {
+                logBox.textContent = timeStr + "【NG】データ項目数が足りないQRコードです\n" + logBox.textContent;
+                return;
+            }
 
+            // 安全に1番目（品目番号）と4番目（箱入数）を取得
             var qrCode = arr.slice(0, 1).join("").trim();
             var qrQty  = parseInt(arr.slice(3, 4).join("").trim()) || 1;
             var hit = false;
 
             for (var i = 0; i < items.length; i++) {
                 if (items[i].code === qrCode) {
-                    items[i].scan += qrQty;
+                    items[i].scan += qrQty; // スキャンされた箱の数量（50個など）を自動加算
                     hit = true;
-                    if (navigator.vibrate) navigator.vibrate(200);
+                    logBox.textContent = timeStr + "【一致】" + items[i].name + " に " + qrQty + " 個を登録\n" + logBox.textContent;
+                    if (navigator.vibrate) navigator.vibrate(200); // 成功バイブ
                     break;
                 }
             }
-            if (!hit && navigator.vibrate) navigator.vibrate(400);
-            showTable();
+            
+            if (!hit) {
+                logBox.textContent = timeStr + "【警告】リスト外の品目番号です: " + qrCode + "\n" + logBox.textContent;
+                if (navigator.vibrate) navigator.vibrate(400); // 失敗バイブ
+            }
+            
+            renderTableDisplay();
         }
     </script>
 </body>
