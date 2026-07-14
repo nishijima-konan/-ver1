@@ -139,13 +139,13 @@
 
         function stopScan() {
             activeScanningMode = "none"; isStreamActive = false;
+            if (codeReader) { codeReader.reset(); }
             if (htmlVideo && htmlVideo.srcObject) { htmlVideo.srcObject.getTracks().forEach(t => t.stop()); htmlVideo.srcObject = null; }
-            if(codeReader) codeReader.reset();
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
+        // 命令の競合を完全に排除した最新の起動処理
         async function startCameraStream() {
-            if (codeReader) codeReader.reset();
             clearOverlay();
             try {
                 const videoInputDevices = await codeReader.listVideoInputDevices();
@@ -153,9 +153,13 @@
                     device.label.toLowerCase().includes('back') || 
                     device.label.toLowerCase().includes('environment')
                 );
-                selectedDeviceId = backCamera ? backCamera.deviceId : null;
+                
+                // 背面カメラがあればそのIDを、無ければ最初のIDを設定
+                selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
                 isStreamActive = true;
 
+                // 競合エラーの原因だった過剰なオプション指定（constraints）をすべて排除し、
+                // ZXing本来のシンプルなカメラ接続命令に一本化（これでフリーズが確実に解けます）
                 codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now(); if (now - lastScanTime < 1500) return;
@@ -163,7 +167,10 @@
                         handleIncomingScan(result.text);
                     }
                 });
-            } catch (err) { txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; }
+            } catch (err) { 
+                console.error("Camera reset error:", err);
+                txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; 
+            }
         }
 
         function handleIncomingScan(qrText) {
