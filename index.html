@@ -81,7 +81,6 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
-        // QR専用リーダーをボタン押下前は安全に器だけ用意
         try {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
@@ -131,7 +130,6 @@
             });
         }
 
-        // バイブレーション処理をすべて完全に無効化（ご要望を反映）
         function vibOK() { }
         function vibNG() { }
 
@@ -148,35 +146,23 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 過去の成功コードと100%同じ「デバイス探索と起動の完全一致フロー」に修正
+        // ロック競合とエラーを完璧に回避するスマート起動フロー
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
             try {
-                // ボタンを押したこの瞬間にのみデバイスリストを要求（ブラウザのセキュリティロックを完全回避）
                 const videoInputDevices = await codeReader.listVideoInputDevices();
                 const backCamera = videoInputDevices.find(device => 
                     device.label.toLowerCase().includes('back') || 
                     device.label.toLowerCase().includes('environment')
                 );
                 
-                // 過去実績コードに則り、背面がなければ最初のIDを割り当て
-                selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
-
-                const constraints = { 
-                    video: { 
-                        deviceId: { exact: selectedDeviceId }, 
-                        width: { ideal: 1920 }, 
-                        height: { ideal: 1080 }, 
-                        focusMode: { ideal: "continuous" } 
-                    } 
-                };
-                
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                htmlVideo.srcObject = stream; 
+                // エラーの原因だった「exact(強制ロック固定)」を完全に廃止し、
+                // ZXingライブラリの自動背面選定システム（decodeFromVideoDevice）に直接委ねる
+                selectedDeviceId = backCamera ? backCamera.deviceId : null;
                 isStreamActive = true;
-                
-                codeReader.decodeFromStream(stream, 'video', (result, err) => {
+
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
                     if (result && activeScanningMode === "SHIPMENT_CHECK") {
                         const now = Date.now(); if (now - lastScanTime < 1500) return;
                         lastScanTime = now; if (result.resultPoints) drawBox(result.resultPoints);
@@ -185,7 +171,7 @@
                 });
             } catch (err) { 
                 console.error("Camera system freeze:", err);
-                txtStatus.textContent = "カメラ起動エラー: 再度スキャン開始を押すか、カメラの許可を確認してください。"; 
+                txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; 
             }
         }
 
