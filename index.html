@@ -65,6 +65,7 @@
         <div class="label">③ 読み取り履歴ログ</div>
         <div id="log"></div>
     </div>
+    <script>
         var shipmentItems = [];
         var activeScanningMode = "none"; 
         var previousScannedQrTime = 0;
@@ -92,23 +93,36 @@
             fileReader.readAsText(fileObj, "Shift_JIS"); 
         });
 
+        // 大カッコバグを100%回避し、CSVを正常に1行ずつ処理するロジック
         function processIncomingCsv(rawCsvText) {
             var allLines = rawCsvText.split(/\r\n|\n/).filter(function(row) { return row.trim() !== ""; });
             if (allLines.length < 4) return;
-            var labels = allLines.slice(1, 2).join("").split(",");
+            
+            var labelHeaderRow = allLines[1]; // 2行目のラベルを安全に取得
+            var labels = labelHeaderRow.split(",");
             var posType = labels.indexOf("機種分類"), posCode = labels.indexOf("品目番号"), posName = labels.indexOf("品目名称"), posQty = labels.indexOf("受注数");
+            
             shipmentItems = [];
-            allLines.slice(3).forEach(function(lineText) {
-                var columns = lineText.split(",");
-                if (columns.length <= 1) return;
+            
+            // 4行目以降のデータ行をループ
+            for (var idx = 3; idx < allLines.length; idx++) {
+                var columns = allLines[idx].split(",");
+                if (columns.length <= 1) continue;
+                
+                // 大カッコのバグを回避して安全に各項目を抽出
+                var typeVal = columns[posType] ? columns[posType].trim() : "";
+                var codeVal = columns[posCode] ? columns[posCode].trim() : "";
+                var nameVal = columns[posName] ? columns[posName].trim() : "";
+                var qtyVal  = parseInt(columns[posQty]) || 0;
+
                 shipmentItems.push({
-                    type: columns.slice(posType, posType + 1).join("").trim(),
-                    code: columns.slice(posCode, posCode + 1).join("").trim(),
-                    name: columns.slice(posName, posName + 1).join("").trim(),
-                    target: parseInt(columns.slice(posQty, posQty + 1).join("")) || 0,
+                    type: typeVal,
+                    code: codeVal,
+                    name: nameVal,
+                    target: qtyVal,
                     scan: 0
                 });
-            });
+            }
             refreshShipmentTable();
             txtStatus.textContent = "CSV完了。照合スキャンを開始してください。";
             document.getElementById("startBtn").disabled = false;
@@ -143,7 +157,6 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // 大カッコバグを100%回避する関数（shift）を用いて過去の成功カメラ選択を完全に再現
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -154,11 +167,9 @@
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('environment')
                     );
-                    // 大カッコ「[0]」を使わず、shift()関数で安全に1番目のデバイスIDを取得（これで空っぽエラーを絶対回避）
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
+                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
                 }
 
-                // 過去に大成功した高画質・連続オートフォーカスの要求設定
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
@@ -188,11 +199,14 @@
         function handleIncomingScan(qrText) {
             if (!qrText) return;
             var arr = qrText.split(",");
-            if (arr.length < 4) { addLog("エラー", "NG", "項目不足"); return; }
-            var qCode = arr.slice(0, 1).join("").trim(), qQty = parseInt(arr.slice(3, 4).join("").trim()) || 1, hit = false;
+            if (arr.length < 4) { addLog("エラー", "NG", "項目不足: " + qrText); return; }
+            
+            var qCode = arr[0] ? arr[0].trim() : "";
+            var qQty  = parseInt(arr[3]) || 1;
+            var hit = false;
 
             for (var i = 0; i < shipmentItems.length; i++) {
-                var item = shipmentItems.slice(i, i + 1).pop();
+                var item = shipmentItems[i];
                 if (item.code === qCode) {
                     item.scan += qQty; hit = true;
                     if (item.scan === item.target) { showResult(true, "完了"); }
@@ -211,8 +225,9 @@
             const ctx = overlay.getContext("2d"); ctx.clearRect(0, 0, overlay.width, overlay.height);
             ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4; ctx.beginPath();
             const sX = htmlVideo.clientWidth / htmlVideo.videoWidth, sY = htmlVideo.clientHeight / htmlVideo.videoHeight;
-            ctx.moveTo(points.slice(0,1).pop().getX() * sX, points.slice(0,1).pop().getY() * sY);
-            for(let i = 1; i < points.length; i++) { ctx.lineTo(points.slice(i, i+1).pop().getX() * sX, points.slice(i, i+1).pop().getY() * sY); }
+            
+            ctx.moveTo(points[0].getX() * sX, points[0].getY() * sY);
+            for(let i = 1; i < points.length; i++) { ctx.lineTo(points[i].getX() * sX, points[i].getY() * sY); }
             ctx.closePath(); ctx.stroke();
         }
 
