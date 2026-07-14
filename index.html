@@ -142,7 +142,7 @@
             });
         }
         function vibOK() { if(navigator.vibrate) navigator.vibrate(100); }
-        function vibNG() { if(navigator.vibrate) navigator.vibrate([200, 100, 200]); }
+        function vibNG() { if(navigator.vibrate) navigator.vibrate(); }
         function vibStart() { if(navigator.vibrate) navigator.vibrate(50); }
 
         async function startMainScan() {
@@ -165,6 +165,7 @@
             clearOverlay();
         }
 
+        // エラーの原因となるフォーカスモード命令を除去し、安定起動を最優先に修正
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -177,13 +178,16 @@
                     );
                     selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0, 1).map(d => d.deviceId).join("");
                 }
+                
+                // 起動エラーを引き起こす特定のカメラ拡張命令を排除し、安全な画質要求のみに集約
                 const constraints = {
                     video: {
                         deviceId: { exact: selectedDeviceId },
-                        width: { ideal: 1920 }, height: { ideal: 1080 },
-                        focusMode: { ideal: "continuous" }
+                        width: { ideal: 1920 }, 
+                        height: { ideal: 1080 }
                     }
                 };
+                
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 document.getElementById('video').srcObject = stream;
                 isStreamActive = true;
@@ -198,7 +202,10 @@
                         handleIncomingScan(result.text);
                     }
                 });
-            } catch (err) { txtStatus.textContent = "カメラ起動エラー"; }
+            } catch (err) { 
+                console.error("Camera system error:", err);
+                txtStatus.textContent = "カメラ起動エラー: 再度お試しいただくか、カメラ権限をご確認ください。"; 
+            }
         }
 
         function handleIncomingScan(qrText) {
