@@ -23,7 +23,7 @@
         .db-table th { background-color: #eee; }
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
-    <script src="https://unpkg.com"></script>
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
 </head>
 <body>
 
@@ -79,11 +79,18 @@
         var divResult = document.getElementById("result");
         var txtLog = document.getElementById("log");
 
-        try {
-            const hints = new Map();
-            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
-            codeReader = new ZXing.BrowserQRCodeReader(hints);
-        } catch (e) { console.error("ZXing error", e); }
+        try  {
+
+    codeReader = new ZXing.BrowserQRCodeReader();
+
+}
+catch(e){
+
+    console.error(e);
+
+    alert("ZXing初期化失敗");
+
+}
 
         document.getElementById("csvFileInput").addEventListener("change", function(evt) {
             var fileObj = evt.target.files.item(0);
@@ -146,40 +153,106 @@
 
         function stopScan() {
             activeScanningMode = "none"; isStreamActive = false;
-            if (htmlVideo && htmlVideo.srcObject) { htmlVideo.srcObject.getTracks().forEach(t => t.stop()); htmlVideo.srcObject = null; }
+            if (codeReader) {
+
+    codeReader.reset();
+
+}
+
+if (htmlVideo.srcObject) {
+
+    htmlVideo.srcObject
+        .getTracks()
+        .forEach(track => track.stop());
+
+    htmlVideo.srcObject = null;
+
+ }
             if(codeReader) codeReader.reset();
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
         // セキュリティエラーを起こす生アクセスを排除し、ZXing専用の安全なカメラ起動フローに完全移行
         async function startCameraStream() {
-            if (codeReader) codeReader.reset();
-            clearOverlay();
-            try {
-                if (!selectedDeviceId) {
-                    const videoInputDevices = await codeReader.listVideoInputDevices();
-                    const backCamera = videoInputDevices.find(device => 
-                        device.label.toLowerCase().includes('back') || 
-                        device.label.toLowerCase().includes('environment')
-                    );
-                    selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices.slice(0).shift().deviceId;
+
+    if (codeReader) {
+
+        codeReader.reset();
+
+    }
+
+    clearOverlay();
+
+    try {
+
+        const devices =
+            await codeReader.listVideoInputDevices();
+
+        if (!devices.length) {
+
+            throw new Error("カメラが見つかりません");
+
+        }
+
+        const backCamera = devices.find(device => {
+
+            const label = device.label.toLowerCase();
+
+            return label.includes("back") ||
+                   label.includes("rear") ||
+                   label.includes("environment");
+
+        });
+
+        selectedDeviceId = backCamera ?
+            backCamera.deviceId :
+            devices[0].deviceId;
+
+        isStreamActive = true;
+
+        codeReader.decodeFromVideoDevice(
+
+            selectedDeviceId,
+
+            "video",
+
+            (result, err) => {
+
+                if (!result) return;
+
+                if (activeScanningMode !== "SHIPMENT_CHECK") return;
+
+                const now = Date.now();
+
+                if (now - lastScanTime < 1500) return;
+
+                lastScanTime = now;
+
+                if (result.resultPoints) {
+
+                    drawBox(result.resultPoints);
+
                 }
 
-                isStreamActive = true;
+                handleIncomingScan(result.text);
 
-                // 過去に実績のある最もエラーの起きないZXing標準のスキャン命令に切り替え（これでエラーが確実に解けます）
-                codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
-                    if (result && activeScanningMode === "SHIPMENT_CHECK") {
-                        const now = Date.now(); if (now - lastScanTime < 1500) return;
-                        lastScanTime = now; if (result.resultPoints) drawBox(result.resultPoints);
-                        handleIncomingScan(result.text);
-                    }
-                });
-            } catch (err) { 
-                console.error("Camera system freeze:", err);
-                txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; 
             }
-        }
+
+        );
+
+    }
+    catch(err){
+
+        console.error(err);
+
+        txtStatus.textContent =
+            err.name + " : " + err.message;
+
+        alert(err.name + "\n" + err.message);
+
+    }
+
+}
 
         function handleIncomingScan(qrText) {
             if (!qrText) return;
