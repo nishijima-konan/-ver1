@@ -2,13 +2,13 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>QRラベル判定</title>
+    <title>QR出荷検品システム</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: sans-serif; padding: 10px; margin: 0; background-color: #f5f5f5; }
+        body { font-family: sans-serif; padding: 10px; margin: 0; background-color: #f5f5f5; color: #333; }
         h1 { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
         button { margin: 5px 0; padding: 12px; font-size: 16px; width: 100%; font-weight: bold; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; background: #fff; }
-        #status { font-size: 16px; margin: 8px 0; text-align: center; color: #333; font-weight: bold; }
+        #status { font-size: 16px; margin: 8px 0; text-align: center; color: #0d47a1; font-weight: bold; }
         #result { margin-top: 10px; font-size: 28px; font-weight: bold; text-align: center; padding: 10px; border-radius: 6px; }
         .ok { color: green; background: #e6ffe6; border: 2px solid green; }
         .ng { color: red; background: #ffe6e6; border: 2px solid red; }
@@ -31,7 +31,6 @@
     <div id="status">【必須】最初に出荷指示書CSVを選択してください</div>
 
     <div id="section-main" class="box">
-        <!-- CSV読み込みエリア -->
         <div style="padding:10px; background:#fffde7; border:1px dashed #ffd54f; border-radius:6px; margin-bottom:12px;">
             <input type="file" id="csvFileInput" accept=".csv" style="width:100%; font-size:14px;">
         </div>
@@ -40,13 +39,12 @@
         <div id="result"></div>
     </div>
 
-    <!-- カメラ表示エリア（スマホの動画再生ブロックを絶対回避する最優先配置） -->
+    <!-- 成功コードと100%一致するカメラ描画用配置 -->
     <div id="video-wrapper">
-        <video id="video" playsinline muted autoplay></video>
+        <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
     </div>
 
-    <!-- 出荷リスト表示エリア -->
     <div class="box">
         <div class="label">📊 出荷リスト（CSVデータ同期）</div>
         <div style="max-height: 250px; overflow-y: auto;">
@@ -146,7 +144,6 @@
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
 
-        // ロック競合とエラーを完璧に回避するスマート起動フロー
         async function startCameraStream() {
             if (codeReader) codeReader.reset();
             clearOverlay();
@@ -156,9 +153,6 @@
                     device.label.toLowerCase().includes('back') || 
                     device.label.toLowerCase().includes('environment')
                 );
-                
-                // エラーの原因だった「exact(強制ロック固定)」を完全に廃止し、
-                // ZXingライブラリの自動背面選定システム（decodeFromVideoDevice）に直接委ねる
                 selectedDeviceId = backCamera ? backCamera.deviceId : null;
                 isStreamActive = true;
 
@@ -169,10 +163,7 @@
                         handleIncomingScan(result.text);
                     }
                 });
-            } catch (err) { 
-                console.error("Camera system freeze:", err);
-                txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; 
-            }
+            } catch (err) { txtStatus.textContent = "カメラ起動エラー: 再度お試しください。"; }
         }
 
         function handleIncomingScan(qrText) {
