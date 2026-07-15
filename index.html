@@ -74,7 +74,7 @@
         let isStreamActive = false;
         let lastScanTime = 0;
         let lastQRCode = "";
-        let qrVisible = false;
+        let waitingQRCodeLeave = false;
 
         var htmlVideo = document.getElementById("video");
         var txtStatus = document.getElementById("status");
@@ -184,7 +184,7 @@ if (htmlVideo.srcObject) {
 
  }
             lastQRCode = "";
-            qrVisible = false;
+            waitingQRCodeLeave = false;
             if(codeReader) codeReader.reset();
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
@@ -241,22 +241,29 @@ if (htmlVideo.srcObject) {
     // QRが見えなくなった
     if (!result) {
 
-        qrVisible = false;
-        clearOverlay();
+        if (waitingQRCodeLeave) {
 
+            waitingQRCodeLeave = false;
+            lastQRCode = "";
+
+        }
+
+        clearOverlay();
         return;
     }
 
     if (activeScanningMode !== "SHIPMENT_CHECK") return;
 
-    // 同じQRがまだ画面にある
-    if (qrVisible && result.text === lastQRCode) {
+    // 同じQRが残っている間は無視
+    if (waitingQRCodeLeave &&
+        result.text === lastQRCode) {
 
         return;
 
     }
 
-    qrVisible = true;
+    // 新しいQR
+    waitingQRCodeLeave = true;
     lastQRCode = result.text;
 
     if (result.resultPoints) {
