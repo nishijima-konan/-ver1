@@ -142,8 +142,20 @@ catch(e){
             });
         }
 
-        function vibOK() { }
-        function vibNG() { }
+        function vibOK() {
+
+    if (navigator.vibrate) {
+        navigator.vibrate(150);
+    }
+
+}
+        function vibNG() {
+
+    if (navigator.vibrate) {
+        navigator.vibrate([100, 80, 100]);
+    }
+
+}
 
         async function startMainScan() {
             activeScanningMode = "SHIPMENT_CHECK";
@@ -228,7 +240,7 @@ if (htmlVideo.srcObject) {
 
                 const now = Date.now();
 
-                if (now - lastScanTime < 300) return;
+                if (now - lastScanTime < 1500) return;
 
                 lastScanTime = now;
 
@@ -267,13 +279,13 @@ if (htmlVideo.srcObject) {
                 var item = shipmentItems.slice(i, i + 1).pop();
                 if (item.code === qCode) {
                     item.scan += qQty; hit = true;
-                    if (item.scan === item.target) { showResult(true, "完了"); }
-                    else if (item.scan > item.target) { showResult(false, "過剰NG"); }
-                    else { showResult(true, "加算OK"); }
+                    if (item.scan === item.target) { showResult(true, "完了"); vibOK();}
+                    else if (item.scan > item.target) { showResult(false, "過剰NG");vibNG();}
+                    else { showResult(true, "加算OK");vibOK();}
                     addLog("照合", "OK", item.name + " +" + qQty); break;
                 }
             }
-            if (!hit) { showResult(false, "リスト外NG"); addLog("照合", "NG", "未登録:" + qCode); }
+            if (!hit) { showResult(false, "リスト外NG");vibNG(); addLog("照合", "NG", "未登録:" + qCode); }
             refreshShipmentTable(); clearOverlayDelayed();
         }
 
