@@ -73,6 +73,8 @@
         let selectedDeviceId = null;
         let isStreamActive = false;
         let lastScanTime = 0;
+        let lastQRCode = "";
+        let qrVisible = false;
 
         var htmlVideo = document.getElementById("video");
         var txtStatus = document.getElementById("status");
@@ -181,6 +183,8 @@ if (htmlVideo.srcObject) {
     htmlVideo.srcObject = null;
 
  }
+            lastQRCode = "";
+            qrVisible = false;
             if(codeReader) codeReader.reset();
             txtStatus.textContent = "停止しました"; clearOverlay();
         }
@@ -234,23 +238,36 @@ if (htmlVideo.srcObject) {
             htmlVideo,
             (result, err) => {
 
-                if (!result) return;
+    // QRが見えなくなった
+    if (!result) {
 
-                if (activeScanningMode !== "SHIPMENT_CHECK") return;
+        qrVisible = false;
+        clearOverlay();
 
-                const now = Date.now();
+        return;
+    }
 
-                if (now - lastScanTime < 1500) return;
+    if (activeScanningMode !== "SHIPMENT_CHECK") return;
 
-                lastScanTime = now;
+    // 同じQRがまだ画面にある
+    if (qrVisible && result.text === lastQRCode) {
 
-                if (result.resultPoints) {
-                    drawBox(result.resultPoints);
-                }
+        return;
 
-                handleIncomingScan(result.text);
+    }
 
-            }
+    qrVisible = true;
+    lastQRCode = result.text;
+
+    if (result.resultPoints) {
+
+        drawBox(result.resultPoints);
+
+    }
+
+    handleIncomingScan(result.text);
+
+}
         );
 
     } catch (err) {
