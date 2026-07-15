@@ -153,6 +153,7 @@ catch(e){
 
         function stopScan() {
             activeScanningMode = "none"; isStreamActive = false;
+            selectedDeviceId = null;
             if (codeReader) {
 
     codeReader.reset();
@@ -175,84 +176,79 @@ if (htmlVideo.srcObject) {
         // セキュリティエラーを起こす生アクセスを排除し、ZXing専用の安全なカメラ起動フローに完全移行
         async function startCameraStream() {
 
-    if (codeReader) {
-
-        codeReader.reset();
-
-    }
+    if (codeReader) codeReader.reset();
 
     clearOverlay();
 
     try {
 
-        const devices =
-            await codeReader.listVideoInputDevices();
+        // カメラ一覧取得
+        const videoInputDevices = await codeReader.listVideoInputDevices();
 
-        if (!devices.length) {
-
+        if (videoInputDevices.length === 0) {
             throw new Error("カメラが見つかりません");
-
         }
 
-        const backCamera = devices.find(device => {
+        // 背面カメラ優先
+        if (!selectedDeviceId) {
 
-            const label = device.label.toLowerCase();
+            const backCamera = videoInputDevices.find(device =>
+                device.label.toLowerCase().includes("back") ||
+                device.label.toLowerCase().includes("rear") ||
+                device.label.toLowerCase().includes("environment")
+            );
 
-            return label.includes("back") ||
-                   label.includes("rear") ||
-                   label.includes("environment");
+            selectedDeviceId = backCamera
+                ? backCamera.deviceId
+                : videoInputDevices[0].deviceId;
+        }
 
-        });
+        const constraints = {
+            video: {
+                deviceId: { exact: selectedDeviceId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
 
-        selectedDeviceId = backCamera ?
-            backCamera.deviceId :
-            devices[0].deviceId;
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        htmlVideo.srcObject = stream;
 
         isStreamActive = true;
 
-        codeReader.decodeFromVideoDevice(
-
-            selectedDeviceId,
-
-            "video",
-
+        codeReader.decodeFromStream(
+            stream,
+            htmlVideo,
             (result, err) => {
 
                 if (!result) return;
 
-　　　　　　　　　if (activeScanningMode !== "SHIPMENT_CHECK") return;
+                if (activeScanningMode !== "SHIPMENT_CHECK") return;
 
-　　　　　　　　　　const now = Date.now();
+                const now = Date.now();
 
-　　　　　　　　　if (now - lastScanTime < 200) return;
+                if (now - lastScanTime < 300) return;
 
-　　　　　　　　　　lastScanTime = now;
+                lastScanTime = now;
 
-　　　　　　　　　if (result.text === window.lastQRCode) return;
-
-　　　　　　　　　　window.lastQRCode = result.text;
-
-　　　　　　　　　if (result.resultPoints) {
-    　　　　　　　　drawBox(result.resultPoints);
-　　　　　　　　　　}
-
-
+                if (result.resultPoints) {
+                    drawBox(result.resultPoints);
+                }
 
                 handleIncomingScan(result.text);
 
             }
-
         );
 
-    }
-    catch(err){
+    } catch (err) {
 
         console.error(err);
 
         txtStatus.textContent =
-            err.name + " : " + err.message;
+            "カメラ起動エラー : " + err.message;
 
-        alert(err.name + "\n" + err.message);
+        alert(err.message);
 
     }
 
