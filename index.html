@@ -81,9 +81,7 @@
 
         try  {
 
-    codeReader = new ZXing.BrowserQRCodeReader(undefined, {
-    delayBetweenScanAttempts: 30
-});
+    codeReader = new ZXing.BrowserQRCodeReader();
 
 }
 catch(e){
@@ -222,17 +220,23 @@ if (htmlVideo.srcObject) {
 
                 if (!result) return;
 
-                if (activeScanningMode !== "SHIPMENT_CHECK") return;
+　　　　　　　　　if (activeScanningMode !== "SHIPMENT_CHECK") return;
 
-                const now = Date.now();
+　　　　　　　　　　const now = Date.now();
 
-                if (now - lastScanTime < 350) return;
+　　　　　　　　　if (now - lastScanTime < 200) return;
 
-                lastScanTime = now;
+　　　　　　　　　　lastScanTime = now;
 
-                if (result.resultPoints && result.resultPoints.length === 4) {
-    drawBox(result.resultPoints);
-}
+　　　　　　　　　if (result.text === window.lastQRCode) return;
+
+　　　　　　　　　　window.lastQRCode = result.text;
+
+　　　　　　　　　if (result.resultPoints) {
+    　　　　　　　　drawBox(result.resultPoints);
+　　　　　　　　　　}
+
+
 
                 handleIncomingScan(result.text);
 
